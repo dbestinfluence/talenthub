@@ -687,7 +687,6 @@ Formula:
 (avg likes + avg comments + avg shares + avg saves)
 ÷ followers × 100
 
-
 Calculation uses all available content
 stored in dtl_creator_posts.
 "
@@ -704,7 +703,6 @@ Formula:
 (avg likes + avg comments + avg shares + avg saves)
 ÷ avg views × 100
 
-
 Calculation only uses content that has view data.
 
 The number of contents used follows
@@ -720,10 +718,8 @@ with available views.
               icon={<Target className="h-5 w-5" />}
               info="
 Formula:
-
 (avg likes + avg comments + avg shares + avg saves + avg views)
 ÷ followers × 100
-
 
 Calculation uses all available content
 stored in dtl_creator_posts.
