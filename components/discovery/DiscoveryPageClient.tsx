@@ -90,6 +90,33 @@ function handleProfilePhotoError(
   }
 }
 
+// --- BARU: badge kecil buat nampilin Instagram / TikTok di kolom tabel ---
+function SocialMediaBadge({ value }: { value: string }) {
+  const normalized = String(value ?? "").toLowerCase();
+  const isInstagram = normalized === "instagram";
+  const isTiktok = normalized === "tiktok";
+
+  const label = isInstagram
+    ? "Instagram"
+    : isTiktok
+    ? "TikTok"
+    : value || "-";
+
+  const classes = isInstagram
+    ? "bg-pink-50 text-pink-600 border-pink-200"
+    : isTiktok
+    ? "bg-slate-900/5 text-slate-700 border-slate-300"
+    : "bg-slate-50 text-slate-500 border-slate-200";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${classes}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function CreatorDiscoveryPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -114,9 +141,7 @@ export default function CreatorDiscoveryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage, setEntriesPerPage] = useState(10);
 
-  const [brandsOptions, setBrandsOptions] = useState<
-    { id: string; name: string }[]
-  >([]);
+   const [brandsOptions, setBrandsOptions] = useState<{ id: string; name: string }[]>([]);
 
   const [isFiltered, setIsFiltered] = useState(true);
 
@@ -1074,6 +1099,7 @@ export default function CreatorDiscoveryPage() {
                     "Photo",
                     "Influencer Name",
                     "Username",
+                    "Social Media",
                     "Post",
                     "Followers",
                     "ER by Follower",
@@ -1132,6 +1158,9 @@ export default function CreatorDiscoveryPage() {
                       {row.username}
                     </td>
                     <td className="p-3 border-r border-gray-200 whitespace-nowrap">
+                      <SocialMediaBadge value={row.social_media} />
+                    </td>
+                    <td className="p-3 border-r border-gray-200 whitespace-nowrap">
                       {row.post}
                     </td>
                     <td className="p-3 border-r border-gray-200 whitespace-nowrap">
@@ -1188,7 +1217,7 @@ export default function CreatorDiscoveryPage() {
                 {currentData.length === 0 && (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={15}
                       className="p-8 text-center text-gray-400 italic"
                     >
                       {isEditMode
