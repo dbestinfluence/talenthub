@@ -677,7 +677,7 @@ export default function CreatorDetailClient(props: {
             {/* Database metrics */}
 
             <MetricCard
-              label="ER Followers"
+              label="ER by Followers"
               value={`${Number(profile.erFollowers ?? 0).toFixed(2)}%`}
               tint="text-teal-500"
               icon={<TrendingUp className="h-5 w-5" />}
@@ -694,7 +694,7 @@ stored in dtl_creator_posts.
             />
 
             <MetricCard
-              label="ER Views"
+              label="ER by Views"
               value={`${Number(profile.erViews ?? 0).toFixed(2)}%`}
               tint="text-cyan-500"
               icon={<Eye className="h-5 w-5" />}
@@ -714,7 +714,7 @@ with available views.
             />
 
             <MetricCard
-              label="ER Talenthub"
+              label="ER by Talenthub Formula"
               value={`${Number(profile.erTalenthub ?? 0).toFixed(2)}%`}
               tint="text-orange-500"
               icon={<Target className="h-5 w-5" />}
