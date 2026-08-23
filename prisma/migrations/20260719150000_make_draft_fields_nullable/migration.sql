@@ -1,0 +1,3 @@
+ALTER TABLE "dtl_project"
+ALTER COLUMN "drf_qty" DROP NOT NULL,
+ALTER COLUMN "drf_qty" DROP DEFAULT;

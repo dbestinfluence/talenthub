@@ -1,0 +1,1 @@
+ALTER TABLE "trs_project" ADD COLUMN "prj_tax_rate" DECIMAL(5,2) NOT NULL DEFAULT 11.00;
