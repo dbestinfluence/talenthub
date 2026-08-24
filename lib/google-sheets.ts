@@ -143,7 +143,9 @@ async function createSpreadsheet(name: string) {
 }
 
 function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
-  const header = ['No.', 'Influencer Name', 'Username', 'Followers', 'Total Post', 'ER by Follower', 'ER by View', 'Avg. View',
+  // This is the client/brand-facing sheet. Use Talenthub's ER calculation,
+  // but keep the column label concise for the recipient.
+  const header = ['No.', 'Influencer Name', 'Username', 'Followers', 'Total Post', 'ER', 'Avg. View',
     'Avg. Brand View', 'CPV All', 'CPV Brand', 'SOW', 'Platform', 'Qty', 'Rate Card', 'Total'];
   return [
     [`Project: ${project.prj_nama} (${project.prj_kode})`],
@@ -153,8 +155,7 @@ function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
     ...project.dtl_project.map((detail, index) => {
       const creator = detail.mst_creators;
       return [index + 1, creator.name, creator.username, creator.followers ?? 0, creator.total_post ?? 0,
-        Number(creator.er_followers ?? 0) / 100,
-        Number(creator.er_views ?? 0) / 100,
+        Number(creator.er_talenthub ?? 0) / 100,
         creator.average_view ?? 0, creator.average_view_brand ?? 0,
         creator.average_view ? Number(detail.drf_markup_price ?? 0) / creator.average_view : 0,
         creator.average_view_brand ? Number(detail.drf_markup_price ?? 0) / creator.average_view_brand : 0,
@@ -224,13 +225,13 @@ export async function syncProjectSpreadsheet(projectId: number, shareWithBrandEm
       method: 'POST',
       body: JSON.stringify({ requests: [
         { updateSheetProperties: { properties: { sheetId: 0, title: 'Creators', gridProperties: { frozenRowCount: 4 } }, fields: 'title,gridProperties.frozenRowCount' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-        { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
-        { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
-        { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 7 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-        { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 16 } } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
+        { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 15 } } },
       ] }),
     });
   }
@@ -240,13 +241,13 @@ export async function syncProjectSpreadsheet(projectId: number, shareWithBrandEm
     method: 'POST',
     body: JSON.stringify({ requests: [
       { unmergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 } } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 }, mergeType: 'MERGE_ALL' } },
-      { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
-      { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
-      { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 7 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-      { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 16 } } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
+      { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 15 } } },
     ] }),
   });
   const brandEmail = project.mst_brand.brd_email?.trim();

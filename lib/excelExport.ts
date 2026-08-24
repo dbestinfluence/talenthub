@@ -35,7 +35,7 @@ export const createExcelWorkbook = (
     "Username",
     "Followers",
     "Total Post",
-    "ER (%)",
+    "ER",
     "Avg. View",
     "Avg. Brand View",
     "CPV All",
@@ -54,7 +54,9 @@ export const createExcelWorkbook = (
     Username: creator.username ?? "-",
     Followers: toFiniteNumber(creator.followers),
     "Total Post": toFiniteNumber(creator.totalPost),
-    "ER (%)": toFiniteNumber(creator.engagementRate),
+    // The client-facing export uses Talenthub's ER. Spreadsheet percentage
+    // formatting requires the stored percentage value to be converted first.
+    ER: toFiniteNumber(creator.erTalenthub) / 100,
     "Avg. View": toFiniteNumber(creator.averageView),
     "Avg. Brand View": toFiniteNumber(creator.averageViewBrand),
     // Always calculate from the business source fields at export time. This
@@ -142,7 +144,7 @@ export const createExcelWorkbook = (
           }
         }
         if (C === 5) {
-          // ER (%) column
+          // ER column
           ws[cell_ref].s.numFmt = "0.00%";
         }
         if (C === 8 || C === 9 || C === 13 || C === 14) {
@@ -161,7 +163,7 @@ export const createExcelWorkbook = (
     { wch: 20 },  // Username
     { wch: 12 },  // Followers
     { wch: 10 },  // Total Post
-    { wch: 8 },   // ER (%)
+    { wch: 8 },   // ER
     { wch: 12 },  // Avg. View
     { wch: 12 },  // Avg. Brand View
     { wch: 12 },  // CPV All
