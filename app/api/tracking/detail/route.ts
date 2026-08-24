@@ -80,6 +80,8 @@ export async function GET(request: Request) {
         totalPost: item.mst_creators.total_post,
 
         engagementRate: Number(item.mst_creators.engagement_rate),
+        erFollowers: Number(item.mst_creators.er_followers ?? 0),
+        erViews: Number(item.mst_creators.er_views ?? 0),
 
         averageView: item.mst_creators.average_view,
         averageViewBrand: item.mst_creators.average_view_brand,

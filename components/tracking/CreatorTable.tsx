@@ -214,7 +214,8 @@ export default function CreatorTable({
         { label: "Username", field: "username" },
         { label: "Followers", field: "followers" },
         { label: "Post", field: "post" },
-        { label: "ER (%)", field: "engagementRate" },
+        { label: "ER by Follower", field: "erFollowers" },
+        { label: "ER by View", field: "erViews" },
         { label: "Avr View", field: "averageView" },
         { label: "Avr Brand", field: "averageViewBrand" },
         { label: "CPV All", field: "cpvAll" },
@@ -357,7 +358,11 @@ export default function CreatorTable({
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-          {creator.engagementRate ? creator.engagementRate.toFixed(2) : "0.00"}%
+          {Number(creator.erFollowers ?? 0).toFixed(2)}%
+        </td>
+
+        <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
+          {Number(creator.erViews ?? 0).toFixed(2)}%
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
