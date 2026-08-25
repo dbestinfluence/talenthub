@@ -96,27 +96,35 @@ async function enrichPostFromContentUrl(
 // Sengaja LEMPAR ERROR kalau semua post gagal di-enrich — supaya gagal
 // diam-diam (fallback ke data bulk yang shares/saves/reposts-nya 0) tidak
 // pernah terjadi tanpa disadari di pipeline pemanggilnya.
+// ganti enrichPosts lama dengan versi ber-concurrency
 async function enrichPosts(
   posts: RawPost[],
-  platform: "instagram" | "tiktok"
+  platform: "instagram" | "tiktok",
+  options: { concurrency?: number } = {}
 ): Promise<RawPost[]> {
-  const enriched: RawPost[] = [];
+  const { concurrency = 5 } = options; // sesuaikan dgn jumlah token di apify-token-pool
+  const enriched: RawPost[] = new Array(posts.length);
   let successCount = 0;
+  let cursor = 0;
 
-  for (const post of posts) {
-    const result = await enrichPostFromContentUrl(post, platform);
-    enriched.push(result.post);
-    if (result.enriched) successCount++;
-    await delay(PER_URL_SCRAPE_DELAY_MS);
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= posts.length) return;
+      const result = await enrichPostFromContentUrl(posts[i], platform);
+      enriched[i] = result.post;
+      if (result.enriched) successCount++;
+    }
   }
 
+  const workerCount = Math.min(concurrency, posts.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+
   console.log(
-    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil di-enrich`
+    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil di-enrich (concurrency=${workerCount})`
   );
 
   if (posts.length > 0 && successCount === 0) {
-    // Semua post gagal enrich -> data shares/saves/reposts/views di batch
-    // ini pasti 0 semua. Ini kondisi yang sebelumnya ke-swallow diam-diam.
     throw new Error(
       `Enrichment gagal total untuk ${posts.length} post (platform: ${platform}). ` +
         `Kemungkinan actor scrapeContentUrl sedang bermasalah (cek Apify console).`
@@ -125,6 +133,45 @@ async function enrichPosts(
 
   return enriched;
 }
+
+// export supaya bisa dipanggil manual dari route (setelah gating check)
+export { enrichPosts };
+
+// BARU: bulk fetch instagram posts TANPA enrichment — dipakai buat quick search
+// biar cek Indonesia bisa jalan duluan sebelum buang waktu enrich.
+export async function fetchInstagramBulkPosts(
+  username: string,
+  sinceDate?: Date,
+  limit = 20
+): Promise<RawPost[]> {
+  return withApifyClient(async (client) => {
+    const input: Record<string, any> = {
+      directUrls: [`https://www.instagram.com/${username}/`],
+      resultsType: "posts",
+      resultsLimit: limit,
+    };
+    if (sinceDate) input.onlyPostsNewerThan = sinceDate.toISOString().slice(0, 10);
+
+    const run = await client.actor("apify/instagram-scraper").call(input);
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+
+    return (items as any[]).slice(0, limit).map((p: any) => ({
+      caption: p.caption ?? "",
+      likes: normalizeCount(p.likesCount ?? p.likeCount ?? p.likes),
+      comments: normalizeCount(p.commentsCount ?? p.commentCount ?? p.comments),
+      views: normalizeCount(p.videoViewCount ?? p.viewsCount ?? p.views),
+      shares: normalizeCount(p.shareCount ?? p.sharesCount ?? p.shares),
+      saves: normalizeCount(p.saveCount ?? p.savesCount ?? p.saves),
+      reposts: normalizeCount(p.repostCount ?? p.repostsCount ?? p.reposts),
+      postedAt: p.timestamp ?? p.takenAtIso ?? new Date().toISOString(),
+      postUrl:
+        p.url ?? (p.shortCode ? `https://www.instagram.com/p/${p.shortCode}/` : ""),
+      thumbnailUrl: p.displayUrl ?? p.display_url,
+      locationName: p.locationName,
+    })) as RawPost[];
+  });
+}
+
 
 // ============================================================================
 // INSTAGRAM — PROFIL SAJA (murah, TIDAK ikut narik postingan)

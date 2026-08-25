@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scrapeInstagramProfiles, scrapeTiktokProfiles } from "@/lib/apify";
+import {
+  fetchInstagramBulkPosts,
+  scrapeInstagramProfileDetails,
+  scrapeTiktokProfiles,
+  enrichPosts,
+} from "@/lib/apify";
 import { checkIndonesianLocation, classifyAccountCategory } from "@/lib/gemini";
 import { persistCreatorProfile } from "@/lib/creator-processor";
 import { firstProfileImageUrl } from "@/lib/profile-image";
 import { prisma } from "@/lib/prisma";
+
+// kasih headroom di bawah limit 5 menit vercel
+export const maxDuration = 280;
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -18,20 +26,35 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const profiles =
-      socialMedia === "instagram"
-        ? await scrapeInstagramProfiles([username])
-        : await scrapeTiktokProfiles([username]);
-
-    const profile = profiles[0];
-
-    if (!profile || !profile.isValid) {
-      return NextResponse.json({
-        inserted: false,
-        reason: "not_found",
-        message: "Akun tidak ditemukan / tidak valid.",
-        preview: null,
+    // ============================================================
+    // STEP 1 — BULK FETCH SAJA (murah, tanpa enrich per-post)
+    // ============================================================
+    let profile;
+    if (socialMedia === "instagram") {
+      const [details] = await scrapeInstagramProfileDetails([username]);
+      if (!details || !details.isValid) {
+        return NextResponse.json({
+          inserted: false,
+          reason: "not_found",
+          message: "Akun tidak ditemukan / tidak valid.",
+          preview: null,
+        });
+      }
+      const bulkPosts = await fetchInstagramBulkPosts(username);
+      profile = { ...details, posts: bulkPosts };
+    } else {
+      const [tiktokProfile] = await scrapeTiktokProfiles([username], undefined, 20, {
+        enrichPosts: false,
       });
+      if (!tiktokProfile || !tiktokProfile.isValid) {
+        return NextResponse.json({
+          inserted: false,
+          reason: "not_found",
+          message: "Akun tidak ditemukan / tidak valid.",
+          preview: null,
+        });
+      }
+      profile = tiktokProfile;
     }
 
     const preview = {
@@ -44,7 +67,10 @@ export async function POST(request: NextRequest) {
       bio: profile.bio ?? "",
     };
 
-    // Ketentuan #1: harus lolos cek lokasi Indonesia
+    // ============================================================
+    // STEP 2 — GATE: cek Indonesia SEBELUM enrich (hemat waktu besar
+    // untuk akun yang bakal ditolak)
+    // ============================================================
     const locationCheck = await checkIndonesianLocation(profile.bio ?? "", profile.posts);
 
     if (!locationCheck.isIndonesian) {
@@ -56,6 +82,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // ============================================================
+    // STEP 3 — Lolos gate: baru enrich post (paralel) SEKALIGUS
+    // classify category (jalan bareng, tidak saling nunggu)
+    // ============================================================
+    const [enrichedPosts, existingCategories] = await Promise.all([
+      enrichPosts(profile.posts, socialMedia as "instagram" | "tiktok", {
+        concurrency: 5,
+      }),
+      prisma.mst_categories.findMany({ select: { name: true } }),
+    ]);
+
+    const categoryName = await classifyAccountCategory(
+      profile.username,
+      profile.bio ?? "",
+      profile.posts, // caption mentah cukup, gak perlu tunggu enrichedPosts
+      existingCategories.map((c) => c.name)
+    );
+
     let cityId: number | undefined;
     if (locationCheck.cityGuess) {
       const city = await prisma.mst_cities.findFirst({
@@ -64,32 +108,17 @@ export async function POST(request: NextRequest) {
       cityId = city?.id;
     }
 
-    // Aman (lolos cek Indonesia) -> klasifikasi kategori pakai Gemini sebelum insert
-    const existingCategories = await prisma.mst_categories.findMany({
-      select: { name: true },
-    });
-    const categoryName = await classifyAccountCategory(
-      profile.username,
-      profile.bio ?? "",
-      profile.posts,
-      existingCategories.map((c) => c.name)
-    );
-
-    // classifyAccountCategory boleh balikin nama kategori BARU (belum ada di DB),
-    // jadi cari dulu case-insensitive, kalau gak ketemu baru bikin baru.
     let category = await prisma.mst_categories.findFirst({
       where: { name: { equals: categoryName, mode: "insensitive" } },
     });
     if (!category && categoryName) {
-      category = await prisma.mst_categories.create({
-        data: { name: categoryName },
-      });
+      category = await prisma.mst_categories.create({ data: { name: categoryName } });
     }
 
-    const creatorId = await persistCreatorProfile(profile, {
-      categoryId: category?.id ?? null,
-      cityId,
-    });
+    const creatorId = await persistCreatorProfile(
+      { ...profile, posts: enrichedPosts },
+      { categoryId: category?.id ?? null, cityId }
+    );
 
     return NextResponse.json({
       inserted: true,

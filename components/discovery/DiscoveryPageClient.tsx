@@ -1062,7 +1062,7 @@ export default function CreatorDiscoveryPage() {
                     setCurrentPage(1);
                   }}
                   placeholder="Type a username or name..."
-                  className="w-full h-10 rounded-full border border-slate-300 bg-white pl-10 pr-9 text-sm shadow-sm transition-all focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                  className="w-full h-10 rounded-lg border border-slate-300 bg-white pl-10 pr-9 text-sm shadow-sm transition-all focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
                 />
                 {usernameSearch && (
                   <button
