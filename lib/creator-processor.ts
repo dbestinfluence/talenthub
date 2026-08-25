@@ -85,9 +85,9 @@ export async function persistCreatorProfile(
     profile.photoUrl,
   ]);
 
-  const validPosts = profile.posts
-    .filter((p) => p.likes > 0 && p.comments >= 0 && p.postUrl)
-    .slice(0, 12);
+  const validPosts = profile.posts.filter(
+    (post) => post.likes >= 0 && post.comments >= 0 && Boolean(post.postUrl)
+  );
 
   // insights.erFollowers / erViews / erTalenthub sudah menggantikan
   // engagement_rate lama (yang cuma likes+comments, tanpa shares/saves).
@@ -268,6 +268,99 @@ export async function persistCreatorProfile(
   }
   console.log(
     `  [OK] ${enrichedCount}/${latestPosts.length} post berhasil di-enrich shares/saves/reposts`
+  );
+
+  // ============================================================
+  // HITUNG ULANG AVG DAN ER SETELAH SEMUA POST SELESAI DI-ENRICH
+  // ============================================================
+
+  const finalStoredPosts = await prisma.dtl_creator_posts.findMany({
+    where: {
+      creator_id: creator.id,
+    },
+    orderBy: {
+      posted_at: "desc",
+    },
+    select: {
+      caption: true,
+      likes: true,
+      comments: true,
+      views: true,
+      shares: true,
+      saves: true,
+      reposts: true,
+      post_url: true,
+      thumbnail_url: true,
+      posted_at: true,
+      is_endorse: true,
+    },
+  });
+
+  const postsForCalculation = finalStoredPosts.map((post) => ({
+    caption: post.caption ?? "",
+    likes: post.likes ?? 0,
+    comments: post.comments ?? 0,
+    views: post.views ?? 0,
+    shares: post.shares ?? 0,
+    saves: post.saves ?? 0,
+    reposts: post.reposts ?? 0,
+    postedAt: post.posted_at?.toISOString() ?? "",
+    postUrl: post.post_url ?? "",
+    thumbnailUrl: post.thumbnail_url ?? undefined,
+  }));
+
+  const finalInsights = computeInsightsFromPosts(
+    postsForCalculation,
+    profile.followers,
+    0
+  );
+
+  // Average Brand Views:
+  // hanya postingan endorse yang memiliki views > 0
+  const finalBrandedViews = finalStoredPosts
+    .filter((post) => post.is_endorse === true && (post.views ?? 0) > 0)
+    .map((post) => post.views ?? 0);
+
+  const finalAverageBrandView =
+    finalBrandedViews.length > 0
+      ? Math.round(
+          finalBrandedViews.reduce((total, views) => total + views, 0) /
+            finalBrandedViews.length
+        )
+      : 0;
+
+  // Overwrite AVG dan ER di mst_creators menggunakan data post final
+  await prisma.mst_creators.update({
+    where: {
+      id: creator.id,
+    },
+    data: {
+      average_view: finalInsights.avgViews,
+      average_view_brand: finalAverageBrandView,
+
+      avg_likes: finalInsights.avgLikes,
+      avg_comments: finalInsights.avgComments,
+      avg_shares: finalInsights.avgShares,
+      avg_saves: finalInsights.avgSaves,
+      avg_reposts: finalInsights.avgReposts,
+
+      er_followers: finalInsights.erFollowers,
+      er_views: finalInsights.erViews,
+      er_talenthub: finalInsights.erTalenthub,
+
+      top_hashtags:
+        finalInsights.topHashtags as unknown as Prisma.InputJsonValue,
+
+      top_mentions:
+        finalInsights.topMentions as unknown as Prisma.InputJsonValue,
+
+      last_scraped_at: new Date(),
+      updated_at: new Date(),
+    },
+  });
+
+  console.log(
+    `  [OK] AVG dan ER ${profile.username} dihitung ulang dari ${finalStoredPosts.length} stored posts`
   );
 
   const newUsernames = await suggestNewUsernames(
