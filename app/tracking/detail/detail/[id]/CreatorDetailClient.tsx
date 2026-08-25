@@ -2,7 +2,10 @@
 
 import { useState, useMemo, useEffect } from "react";
 import DefaultLayout from "@/components/Layout/DefaultLayout";
-import { type RawPostLike } from "@/lib/insights";
+import {
+  computeInsightsFromPosts,
+  type RawPostLike,
+} from "@/lib/insights";
 
 type IconProps = { className?: string };
 
@@ -148,6 +151,19 @@ type Profile = {
 };
 
 type Post = RawPostLike & { id: number };
+
+type PerformancePeriod = "all" | "7" | "30" | "60" | "90";
+
+const PERFORMANCE_PERIODS: {
+  value: PerformancePeriod;
+  label: string;
+}[] = [
+  { value: "all", label: "Data All" },
+  { value: "7", label: "Last H-7 days" },
+  { value: "30", label: "H-30" },
+  { value: "60", label: "H-60" },
+  { value: "90", label: "H-90" },
+];
 
 function formatNumber(num: number): string {
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
@@ -550,22 +566,57 @@ export default function CreatorDetailClient(props: {
   profile: Profile;
   posts: Post[];
 }) {
-  const { profile, posts: initialPosts } = props;
-  const [posts] = useState<Post[]>(initialPosts);
+  const { profile, posts } = props;
+  const [performancePeriod, setPerformancePeriod] =
+    useState<PerformancePeriod>("all");
+
+  const performancePosts = useMemo(() => {
+    if (performancePeriod === "all") return posts;
+
+    const days = Number(performancePeriod);
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+    return posts.filter((post) => {
+      const postedTime = new Date(post.postedAt).getTime();
+      return !Number.isNaN(postedTime) && postedTime >= cutoff;
+    });
+  }, [posts, performancePeriod]);
+
+  const performance = useMemo(
+    () =>
+      computeInsightsFromPosts(
+        performancePosts,
+        profile.followers,
+        0
+      ),
+    [performancePosts, profile.followers]
+  );
 
   const defaultProfilePhoto = "/image/default-kol-avatar.png";
   const photoSrc = proxied(profile.photoUrl) || defaultProfilePhoto;
   const followingText =
     profile.following !== null ? formatNumber(profile.following) : "-";
 
+  // Top 5 ikut periode aktif dan diurutkan berdasarkan total engagement.
   const topPosts = useMemo(() => {
-    return [...posts]
-      .sort(
-        (a, b) =>
+    const engagement = (post: Post) =>
+      Math.max(0, post.likes ?? 0) +
+      Math.max(0, post.comments ?? 0) +
+      Math.max(0, post.shares ?? 0) +
+      Math.max(0, post.saves ?? 0) +
+      Math.max(0, post.reposts ?? 0);
+
+    return [...performancePosts]
+      .sort((a, b) => {
+        const difference = engagement(b) - engagement(a);
+        if (difference !== 0) return difference;
+
+        return (
           new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
-      )
+        );
+      })
       .slice(0, 5);
-  }, [posts]);
+  }, [performancePosts]);
 
   return (
     <DefaultLayout>
@@ -621,40 +672,73 @@ export default function CreatorDetailClient(props: {
 
         {/* User Performance */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-          <h2 className="text-lg font-bold text-slate-800">User Performance</h2>
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">
+                User Performance
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Calculated from {performancePosts.length} stored contents
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <div className="inline-flex min-w-max gap-1 rounded-xl border border-[#F0D8BA] bg-[#FBF4EB] p-1">
+                {PERFORMANCE_PERIODS.map((period) => {
+                  const active = performancePeriod === period.value;
+
+                  return (
+                    <button
+                      key={period.value}
+                      type="button"
+                      onClick={() => setPerformancePeriod(period.value)}
+                      className={[
+                        "rounded-lg px-4 py-2 text-sm font-semibold transition",
+                        active
+                          ? "bg-[#E3A458] text-white shadow-sm"
+                          : "text-[#8A6235] hover:bg-white/70 hover:text-[#B9782D]",
+                      ].join(" ")}
+                    >
+                      {period.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard
               label="Average Likes"
-              value={formatNumber(profile.avgLikes)}
+              value={formatNumber(performance.avgLikes)}
               tint="text-rose-500"
               icon={<Heart className="h-5 w-5" />}
             />
 
             <MetricCard
               label="Average Comments"
-              value={formatNumber(profile.avgComments)}
+              value={formatNumber(performance.avgComments)}
               tint="text-emerald-500"
               icon={<MessageCircle className="h-5 w-5" />}
             />
 
             <MetricCard
               label="Average Shares"
-              value={formatNumber(profile.avgShares)}
+              value={formatNumber(performance.avgShares)}
               tint="text-indigo-500"
               icon={<Share2 className="h-5 w-5" />}
             />
 
             <MetricCard
               label="Average Saves"
-              value={formatNumber(profile.avgSaves)}
+              value={formatNumber(performance.avgSaves)}
               tint="text-amber-500"
               icon={<Bookmark className="h-5 w-5" />}
             />
 
             <MetricCard
               label="Average Reposts"
-              value={formatNumber(profile.avgReposts)}
+              value={formatNumber(performance.avgReposts)}
               tint="text-violet-500"
               icon={<Repeat2 className="h-5 w-5" />}
             />
@@ -662,7 +746,7 @@ export default function CreatorDetailClient(props: {
             {/* Database fixed metrics */}
             <MetricCard
               label="Average Views"
-              value={formatNumber(profile.averageView)}
+              value={formatNumber(performance.avgViews)}
               tint="text-sky-500"
               icon={<Eye className="h-5 w-5" />}
             />
@@ -678,63 +762,60 @@ export default function CreatorDetailClient(props: {
 
             <MetricCard
               label="ER by Followers"
-              value={`${Number(profile.erFollowers ?? 0).toFixed(2)}%`}
+              value={`${performance.erFollowers.toFixed(2)}%`}
               tint="text-teal-500"
               icon={<TrendingUp className="h-5 w-5" />}
               info="
 Formula:
 
-(avg likes + avg comments + avg shares + avg saves)
+(avg likes + avg comments + avg shares + avg saves + avg reposts)
 ÷ followers × 100
 
-Calculation uses all available content
-stored in dtl_creator_posts.
+Calculation follows the selected period.
 "
             />
 
             <MetricCard
               label="ER by Views"
-              value={`${Number(profile.erViews ?? 0).toFixed(2)}%`}
+              value={`${performance.erViews.toFixed(2)}%`}
               tint="text-cyan-500"
               icon={<Eye className="h-5 w-5" />}
               info="
 Formula:
 
-(avg likes + avg comments + avg shares + avg saves)
+(avg likes + avg comments + avg shares + avg saves + avg reposts)
 ÷ avg views × 100
 
 Calculation only uses content that has view data.
 
-The number of contents used follows
-the number of video/reels posts
-with available views.
+Only video/reels posts with available views
+inside the selected period are used.
 "
             />
 
             <MetricCard
-              label="ER by Talenthub Formula"
-              value={`${Number(profile.erTalenthub ?? 0).toFixed(2)}%`}
+              label="ER by TalentHub"
+              value={`${performance.erTalenthub.toFixed(2)}%`}
               tint="text-orange-500"
               icon={<Target className="h-5 w-5" />}
               info="
 Formula:
-(avg likes + avg comments + avg shares + avg saves + avg views)
-÷ followers × 100
-
-Calculation uses all available content
-stored in dtl_creator_posts.
+(avg likes + avg comments + avg shares + avg saves + avg views + avg reposts)
+÷ followers
+The calculation is not multiplied by 100.
+Calculation follows the selected period.
 "
             />
 
             <MetricCard
               label="Total Posts benchmarking"
-              value={formatNumber(profile.totalPosts)}
+              value={formatNumber(performancePosts.length)}
               tint="text-indigo-500"
               icon={<Users className="h-5 w-5" />}
             />
           </div>
 
-           {profile.lastScrapedAt ? (
+          {profile.lastScrapedAt ? (
             <p className="mt-4 flex items-center gap-1 text-xs text-emerald-500">
               ✓ Last Updated: {formatDate(profile.lastScrapedAt)}
             </p>
@@ -771,7 +852,12 @@ stored in dtl_creator_posts.
           ) : null}
 
           <div className="mt-10">
-            <h3 className="mb-5 text-xl font-bold">Top 5 Contents</h3>
+            <h3 className="mb-1 text-xl font-bold">Top 5 Contents</h3>
+            <p className="mb-5 text-sm text-slate-400">
+              {performancePeriod === "all"
+                ? "Top content from all stored posts"
+                : `Top content from the last ${performancePeriod} days`}
+            </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {topPosts.map((post) => (
                 <PostCard key={post.id} post={post} />
