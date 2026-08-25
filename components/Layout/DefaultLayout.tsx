@@ -22,25 +22,41 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
   const mounted = useMounted();
   const router = useRouter();
   const pathname = usePathname();
-  const currentPage = pathname.includes("/tracking")
-  ? {
-      title: "Progress",
-      description: "Monitor project campaign progress from draft to finish",
-    }
-  : pathname.includes("/discovery")
-  ? {
-      title: "Creator Discovery",
-      description: "Discover the right creators for your campaigns",
-    }
-  : ["/users", "/payment", "/sow", "/brand", "/dbest"].some((path) => pathname.startsWith(path))
-  ? {
-      title: "Master Data",
-      description: "Manage the reference data used throughout Talent Hub",
-    }
-  : {
-      title: "Home",
-      description: "Discover the right creators for your campaigns",
-    };
+  const currentPage =
+    // Route detail harus diperiksa terlebih dahulu
+    pathname.startsWith("/tracking/detail/detail/")
+      ? {
+          title: "Creator Detail",
+          description:
+            "View creator profile, performance, and content insights",
+        }
+      : pathname.startsWith("/tracking/detail/")
+      ? {
+          title: "Creator Detail",
+          description:
+            "View creator profile, performance, and content insights",
+        }
+      : pathname.startsWith("/tracking")
+      ? {
+          title: "Progress",
+          description: "Monitor project campaign progress from draft to finish",
+        }
+      : pathname.startsWith("/discovery")
+      ? {
+          title: "Creator Discovery",
+          description: "Discover the right creators for your campaigns",
+        }
+      : ["/users", "/payment", "/sow", "/brand", "/dbest"].some((path) =>
+          pathname.startsWith(path)
+        )
+      ? {
+          title: "Master Data",
+          description: "Manage the reference data used throughout Talent Hub",
+        }
+      : {
+          title: "Home",
+          description: "Discover the right creators for your campaigns",
+        };
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -81,7 +97,9 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
       nextParams.delete("unauthorized");
       const nextQuery = nextParams.toString();
 
-      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+        scroll: false,
+      });
     }
   }, [pathname, router, searchParams]);
 
@@ -96,9 +114,13 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
     };
   }, []);
 
-  const profileName = mounted ? session?.user?.name || "Unknown User" : "Unknown User";
+  const profileName = mounted
+    ? session?.user?.name || "Unknown User"
+    : "Unknown User";
   const profileRole = mounted ? session?.user?.role || "-" : "-";
-  const profileEmail = mounted ? session?.user?.email || "No email" : "No email";
+  const profileEmail = mounted
+    ? session?.user?.email || "No email"
+    : "No email";
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -115,7 +137,11 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
         onCloseMobile={() => setMobileOpen(false)}
       />
 
-     <div className={`min-w-0 transition-[margin,width] duration-300 md:ml-20 md:w-[calc(100%-5rem)] ${mobileOpen ? "ml-20 w-[calc(100%-5rem)]" : "ml-0 w-full"}`}>
+      <div
+        className={`min-w-0 transition-[margin,width] duration-300 md:ml-20 md:w-[calc(100%-5rem)] ${
+          mobileOpen ? "ml-20 w-[calc(100%-5rem)]" : "ml-0 w-full"
+        }`}
+      >
         <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 px-3 py-4 backdrop-blur sm:px-4 sm:py-5 md:px-8 md:py-7">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -125,7 +151,13 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
                 className="shrink-0 rounded-lg border border-slate-300 bg-white p-2 text-slate-700 transition hover:bg-slate-50 md:hidden"
                 aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
                   <path d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
@@ -140,8 +172,6 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
-            
-
               <div className="relative" ref={profileRef}>
                 <button
                   type="button"
@@ -149,7 +179,13 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-500 hover:text-emerald-600"
                   aria-label="Open profile card"
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
                     <circle cx="12" cy="8" r="3.5" />
                     <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
                   </svg>
@@ -159,7 +195,13 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
                   <div className="fixed inset-x-3 top-20 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.14)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-14 sm:w-72">
                     <div className="flex flex-col items-center text-center">
                       <div className="flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500">
-                        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-8 w-8"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                        >
                           <circle cx="12" cy="8" r="3.5" />
                           <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
                         </svg>
@@ -189,19 +231,29 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
           </div>
         </header>
 
-        <main className="min-w-0 px-3 py-4 sm:px-4 sm:py-6 md:px-8">{children}</main>
+        <main className="min-w-0 px-3 py-4 sm:px-4 sm:py-6 md:px-8">
+          {children}
+        </main>
 
         {accessToastVisible ? (
           <div className="pointer-events-none fixed bottom-4 right-4 z-[70] max-w-sm rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-rose-700 shadow-[0_18px_50px_rgba(15,23,42,0.14)] backdrop-blur">
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M12 8v5" />
                   <path d="M12 16h.01" />
                   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold leading-none">You do not have permission to access this page.</p>
+              <p className="text-sm font-semibold leading-none">
+                You do not have permission to access this page.
+              </p>
             </div>
           </div>
         ) : null}
@@ -211,7 +263,11 @@ export default function DefaultLayout({ children }: DefaultLayoutProps) {
 }
 
 function useMounted() {
-  return useSyncExternalStore(subscribeToMount, getClientSnapshot, getServerSnapshot);
+  return useSyncExternalStore(
+    subscribeToMount,
+    getClientSnapshot,
+    getServerSnapshot
+  );
 }
 
 function subscribeToMount() {
