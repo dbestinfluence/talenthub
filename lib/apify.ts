@@ -50,17 +50,38 @@ function normalizeCount(value: unknown): number {
 // Jeda antar scrape ulang per-URL biar nggak langsung kena rate limit.
 const PER_URL_SCRAPE_DELAY_MS = 1200;
 
+// FIX: retry khusus untuk error yang TRANSIENT (429 dari Instagram, atau
+// actor kebetulan balikin post lain gara-gara session pengganti pas kena
+// 429). Sebelumnya sekali gagal langsung fallback ke data bulk (shares/
+// saves/views = 0), jadi kelihatan seolah-olah "cuma sebagian post valid"
+// padahal sebenarnya cuma keburu nyerah pas Instagram lagi throttle.
+const ENRICH_MAX_ATTEMPTS = 3;
+const ENRICH_RETRY_BASE_DELAY_MS = 3000; // 3s, lalu 6s
+
+function isRetryableEnrichError(err: unknown): boolean {
+  const message = String((err as any)?.message ?? "").toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("too many requests") ||
+    message.includes("did not return the exact requested content") ||
+    message.includes("could not be found or is not public")
+  );
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Scrape ulang SATU post lewat scrapeContentUrl (identity-verified) dan
 // gabungkan hasilnya dengan `postedAt`/`locationName` yang cuma tersedia
-// dari listing bulk. Kalau gagal (post dihapus, dsb), fallback ke data
-// bulk apa adanya supaya satu post gagal tidak menggagalkan seluruh batch.
+// dari listing bulk. Retry beberapa kali kalau errornya transient (429,
+// atau actor balikin post yang salah gara-gara session pengganti). Kalau
+// semua percobaan gagal, fallback ke data bulk apa adanya supaya satu post
+// gagal tidak menggagalkan seluruh batch.
 async function enrichPostFromContentUrl(
   fallback: RawPost,
-  platform: "instagram" | "tiktok"
+  platform: "instagram" | "tiktok",
+  attempt = 1
 ): Promise<{ post: RawPost; enriched: boolean }> {
   if (!fallback.postUrl) return { post: fallback, enriched: false };
 
@@ -83,26 +104,41 @@ async function enrichPostFromContentUrl(
       },
     };
   } catch (err) {
+    if (isRetryableEnrichError(err) && attempt < ENRICH_MAX_ATTEMPTS) {
+      const waitMs = ENRICH_RETRY_BASE_DELAY_MS * attempt;
+      console.warn(
+        `  [RETRY] ${fallback.postUrl} gagal (attempt ${attempt}/${ENRICH_MAX_ATTEMPTS}), tunggu ${waitMs}ms:`,
+        (err as any)?.message
+      );
+      await delay(waitMs);
+      return enrichPostFromContentUrl(fallback, platform, attempt + 1);
+    }
+
     console.error(
-      `  [WARN] gagal scrape ulang detail post ${fallback.postUrl}:`,
+      `  [WARN] gagal scrape ulang detail post ${fallback.postUrl} (setelah ${attempt} percobaan):`,
       err
     );
     return { post: fallback, enriched: false };
   }
 }
 
-// Enrich SEMUA post dalam array secara berurutan (dengan jeda antar
-// panggilan) supaya nggak langsung kena rate limit di actor per-URL.
+// Enrich SEMUA post dalam array dengan concurrency terbatas + retry.
+// PENTING: concurrency di sini menembak Instagram langsung (lewat actor
+// data-slayer/instagram-post-details), BUKAN dibatasi oleh jumlah token
+// Apify di pool. Instagram nge-throttle berdasarkan pola request actor,
+// jadi walau token Apify ada banyak, concurrency yang kegedean tetap akan
+// kena 429 dari Instagram. Default diturunkan ke 2 — sesuaikan naik
+// pelan-pelan sambil mengawasi log [RETRY]/[WARN], jangan langsung besar.
+//
 // Sengaja LEMPAR ERROR kalau semua post gagal di-enrich — supaya gagal
 // diam-diam (fallback ke data bulk yang shares/saves/reposts-nya 0) tidak
 // pernah terjadi tanpa disadari di pipeline pemanggilnya.
-// ganti enrichPosts lama dengan versi ber-concurrency
 async function enrichPosts(
   posts: RawPost[],
   platform: "instagram" | "tiktok",
   options: { concurrency?: number } = {}
 ): Promise<RawPost[]> {
-  const { concurrency = 5 } = options; // sesuaikan dgn jumlah token di apify-token-pool
+  const { concurrency = 2 } = options; // FIX: default diturunkan dari 5 -> 2
   const enriched: RawPost[] = new Array(posts.length);
   let successCount = 0;
   let cursor = 0;
@@ -127,7 +163,7 @@ async function enrichPosts(
   if (posts.length > 0 && successCount === 0) {
     throw new Error(
       `Enrichment gagal total untuk ${posts.length} post (platform: ${platform}). ` +
-        `Kemungkinan actor scrapeContentUrl sedang bermasalah (cek Apify console).`
+        `Kemungkinan actor scrapeContentUrl sedang bermasalah (cek Apify console) atau Instagram sedang throttle berat.`
     );
   }
 
@@ -142,7 +178,7 @@ export { enrichPosts };
 export async function fetchInstagramBulkPosts(
   username: string,
   sinceDate?: Date,
-  limit = 20
+  limit = 14
 ): Promise<RawPost[]> {
   return withApifyClient(async (client) => {
     const input: Record<string, any> = {
@@ -230,7 +266,7 @@ export async function scrapeInstagramProfileDetails(
 export async function scrapeInstagramPosts(
   username: string,
   sinceDate?: Date,
-  limit = 20
+  limit = 14
 ): Promise<RawPost[]> {
   const bulkPosts = await withApifyClient(async (client) => {
     const input: Record<string, any> = {
@@ -306,7 +342,7 @@ export async function scrapeInstagramProfiles(
 export async function scrapeTiktokProfiles(
   usernames: string[],
   sinceDate?: Date,
-  resultsPerPage = 20,
+  resultsPerPage = 14,
   options: { enrichPosts?: boolean } = {}
 ): Promise<RawProfile[]> {
   if (usernames.length === 0) return [];
@@ -340,9 +376,22 @@ export async function scrapeTiktokProfiles(
     grouped.set(key, [...(grouped.get(key) ?? []), item]);
   }
 
+  // FIX: filter balik ke usernames yang diminta. Sebelumnya semua author
+  // yang muncul di hasil actor langsung dipush ke `profiles` apa adanya —
+  // kalau actor kebetulan balikin item dengan authorMeta.name di luar yang
+  // diminta (related video, dsb), pemanggil yang cuma ambil elemen pertama
+  // (`profiles[0]`) bisa diam-diam dapat profile/post creator yang salah.
+  const requestedLower = new Set(usernames.map((u) => u.toLowerCase()));
   const profiles: RawProfile[] = [];
 
   for (const [username, groupedPosts] of grouped.entries()) {
+    if (!requestedLower.has(username.toLowerCase())) {
+      console.warn(
+        `  [SKIP] author "${username}" muncul di hasil TikTok scraper tapi tidak diminta — dibuang`
+      );
+      continue;
+    }
+
     const author = groupedPosts[0].authorMeta;
     const photoUrls = imageUrls(
       author.avatarLarger,
@@ -398,7 +447,7 @@ export async function validateUsernames(
   const profiles =
     platform === "instagram"
       ? await scrapeInstagramProfileDetails(usernames) // IG: profil doang, memang gak ada posts
-      : await scrapeTiktokProfiles(usernames, undefined, 20, {
+      : await scrapeTiktokProfiles(usernames, undefined, 14, {
           enrichPosts: false,
         });
 
