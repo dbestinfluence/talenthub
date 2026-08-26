@@ -13,10 +13,7 @@ export interface RawPost {
   postedAt: string;
   postUrl: string;
   thumbnailUrl?: string;
-  locationName?: string;
-
-  // Dipakai untuk memastikan post memang milik creator.
-  ownerUsername?: string;
+  locationName?: string; // dipakai pipeline.ts untuk deteksi kota (mostCommonLocation)
 }
 
 export interface RawProfile {
@@ -63,17 +60,12 @@ function delay(ms: number): Promise<void> {
 // bulk apa adanya supaya satu post gagal tidak menggagalkan seluruh batch.
 async function enrichPostFromContentUrl(
   fallback: RawPost,
-  platform: "instagram" | "tiktok",
-  expectedUsername?: string
+  platform: "instagram" | "tiktok"
 ): Promise<{ post: RawPost; enriched: boolean }> {
   if (!fallback.postUrl) return { post: fallback, enriched: false };
 
   try {
-    const metrics = await scrapeContentUrl(
-      fallback.postUrl,
-      platform,
-      expectedUsername
-    );
+    const metrics = await scrapeContentUrl(fallback.postUrl, platform);
     return {
       enriched: true,
       post: {
@@ -88,8 +80,6 @@ async function enrichPostFromContentUrl(
         postUrl: metrics.scrapedContentUrl || fallback.postUrl,
         thumbnailUrl: metrics.thumbnailUrl ?? fallback.thumbnailUrl,
         locationName: fallback.locationName,
-        ownerUsername:
-          metrics.ownerUsername ?? fallback.ownerUsername,
       },
     };
   } catch (err) {
@@ -107,280 +97,78 @@ async function enrichPostFromContentUrl(
 // diam-diam (fallback ke data bulk yang shares/saves/reposts-nya 0) tidak
 // pernah terjadi tanpa disadari di pipeline pemanggilnya.
 // ganti enrichPosts lama dengan versi ber-concurrency
-export async function enrichPosts(
+async function enrichPosts(
   posts: RawPost[],
   platform: "instagram" | "tiktok",
-  options: {
-    concurrency?: number;
-    dropFailed?: boolean;
-    expectedUsername?: string;
-  } = {}
+  options: { concurrency?: number } = {}
 ): Promise<RawPost[]> {
-  const {
-    concurrency = 5,
-    dropFailed = false,
-    expectedUsername,
-  } = options;
-
-  if (posts.length === 0) {
-    return [];
-  }
-
-  const results: Array<{
-    post: RawPost;
-    enriched: boolean;
-  } | null> = new Array(posts.length).fill(null);
-
+  const { concurrency = 5 } = options; // sesuaikan dgn jumlah token di apify-token-pool
+  const enriched: RawPost[] = new Array(posts.length);
+  let successCount = 0;
   let cursor = 0;
 
   async function worker() {
     while (true) {
-      const index = cursor++;
-
-      if (index >= posts.length) {
-        return;
-      }
-
-      results[index] =
-        await enrichPostFromContentUrl(
-          posts[index],
-          platform,
-          expectedUsername
-        );
+      const i = cursor++;
+      if (i >= posts.length) return;
+      const result = await enrichPostFromContentUrl(posts[i], platform);
+      enriched[i] = result.post;
+      if (result.enriched) successCount++;
     }
   }
 
-  const workerCount = Math.min(
-    Math.max(1, concurrency),
-    posts.length
-  );
-
-  await Promise.all(
-    Array.from(
-      { length: workerCount },
-      () => worker()
-    )
-  );
-
-  const completedResults = results.filter(
-    (
-      result
-    ): result is {
-      post: RawPost;
-      enriched: boolean;
-    } => result !== null
-  );
-
-  const successCount = completedResults.filter(
-    (result) => result.enriched
-  ).length;
+  const workerCount = Math.min(concurrency, posts.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
 
   console.log(
-    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil diverifikasi (concurrency=${workerCount})`
+    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil di-enrich (concurrency=${workerCount})`
   );
 
-  // Mode strict untuk Quick Search:
-  // hasil yang gagal diverifikasi tidak dikembalikan.
-  if (dropFailed) {
-    return completedResults
-      .filter((result) => result.enriched)
-      .map((result) => result.post);
-  }
-
-  // Mode biasa untuk background pipeline:
-  // post gagal memakai data bulk.
   if (posts.length > 0 && successCount === 0) {
     throw new Error(
-      `Enrichment gagal total untuk ${posts.length} post (platform: ${platform})`
+      `Enrichment gagal total untuk ${posts.length} post (platform: ${platform}). ` +
+        `Kemungkinan actor scrapeContentUrl sedang bermasalah (cek Apify console).`
     );
   }
 
-  return completedResults.map(
-    (result) => result.post
-  );
+  return enriched;
 }
 
+// export supaya bisa dipanggil manual dari route (setelah gating check)
+export { enrichPosts };
 
 // BARU: bulk fetch instagram posts TANPA enrichment — dipakai buat quick search
 // biar cek Indonesia bisa jalan duluan sebelum buang waktu enrich.
 export async function fetchInstagramBulkPosts(
   username: string,
   sinceDate?: Date,
-  candidateLimit = 40
+  limit = 20
 ): Promise<RawPost[]> {
-  const normalizedUsername = username
-    .trim()
-    .replace(/^@+/, "")
-    .toLowerCase();
-
   return withApifyClient(async (client) => {
-    const input: Record<string, unknown> = {
-      directUrls: [
-        `https://www.instagram.com/${normalizedUsername}/`,
-      ],
+    const input: Record<string, any> = {
+      directUrls: [`https://www.instagram.com/${username}/`],
       resultsType: "posts",
-      resultsLimit: candidateLimit,
+      resultsLimit: limit,
     };
+    if (sinceDate) input.onlyPostsNewerThan = sinceDate.toISOString().slice(0, 10);
 
-    if (sinceDate) {
-      input.onlyPostsNewerThan = sinceDate
-        .toISOString()
-        .slice(0, 10);
-    }
+    const run = await client.actor("apify/instagram-scraper").call(input);
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
 
-    const run = await client
-      .actor("apify/instagram-scraper")
-      .call(input);
-
-    const { items } = await client
-      .dataset(run.defaultDatasetId)
-      .listItems();
-
-    const seenContentIds = new Set<string>();
-
-    const posts = (items as any[])
-      .map((item): RawPost | null => {
-        const ownerUsername = String(
-          item.ownerUsername ??
-            item.owner?.username ??
-            item.user?.username ??
-            item.author?.username ??
-            ""
-        )
-          .trim()
-          .replace(/^@+/, "")
-          .toLowerCase();
-
-        // Quick Search bersifat strict: kandidat tanpa owner juga dibuang.
-        // URL valid saja belum membuktikan post tersebut milik creator target.
-        if (ownerUsername !== normalizedUsername) {
-          console.warn(
-            `  [BULK] Post dibuang karena owner tidak cocok: ${ownerUsername || "unknown"} !== ${normalizedUsername}`
-          );
-
-          return null;
-        }
-
-        const shortCode = String(
-          item.shortCode ??
-            item.shortcode ??
-            item.code ??
-            ""
-        ).trim();
-
-        const postUrl = String(
-          item.url ??
-            item.postUrl ??
-            (shortCode
-              ? `https://www.instagram.com/p/${shortCode}/`
-              : "")
-        ).trim();
-
-        const postedAt = String(
-          item.timestamp ??
-            item.takenAtIso ??
-            item.taken_at ??
-            ""
-        ).trim();
-
-        if (!postUrl || !postedAt) {
-          return null;
-        }
-
-        let contentIdentity: string;
-
-        try {
-          const identity = getContentIdentity(
-            postUrl,
-            "instagram"
-          );
-
-          contentIdentity =
-            identity.contentId ??
-            identity.normalizedUrl;
-        } catch {
-          console.warn(
-            `  [BULK] URL post tidak valid dan dibuang: ${postUrl}`
-          );
-
-          return null;
-        }
-
-        if (seenContentIds.has(contentIdentity)) {
-          return null;
-        }
-
-        seenContentIds.add(contentIdentity);
-
-        return {
-          caption: item.caption ?? "",
-
-          likes: normalizeCount(
-            item.likesCount ??
-              item.likeCount ??
-              item.likes
-          ),
-
-          comments: normalizeCount(
-            item.commentsCount ??
-              item.commentCount ??
-              item.comments
-          ),
-
-          views: normalizeCount(
-            item.videoViewCount ??
-              item.videoPlayCount ??
-              item.viewsCount ??
-              item.views
-          ),
-
-          shares: normalizeCount(
-            item.shareCount ??
-              item.sharesCount ??
-              item.shares
-          ),
-
-          saves: normalizeCount(
-            item.saveCount ??
-              item.savesCount ??
-              item.saves
-          ),
-
-          reposts: normalizeCount(
-            item.repostCount ??
-              item.repostsCount ??
-              item.reposts
-          ),
-
-          postedAt,
-          postUrl,
-
-          thumbnailUrl:
-            item.displayUrl ??
-            item.display_url ??
-            item.thumbnailUrl,
-
-          locationName: item.locationName,
-
-          ownerUsername:
-            ownerUsername || undefined,
-        };
-      })
-      .filter(
-        (post): post is RawPost =>
-          post !== null
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.postedAt).getTime() -
-          new Date(a.postedAt).getTime()
-      );
-
-    console.log(
-      `  [BULK] ${normalizedUsername}: ${posts.length}/${items.length} kandidat lolos filter awal`
-    );
-
-    return posts;
+    return (items as any[]).slice(0, limit).map((p: any) => ({
+      caption: p.caption ?? "",
+      likes: normalizeCount(p.likesCount ?? p.likeCount ?? p.likes),
+      comments: normalizeCount(p.commentsCount ?? p.commentCount ?? p.comments),
+      views: normalizeCount(p.videoViewCount ?? p.viewsCount ?? p.views),
+      shares: normalizeCount(p.shareCount ?? p.sharesCount ?? p.shares),
+      saves: normalizeCount(p.saveCount ?? p.savesCount ?? p.saves),
+      reposts: normalizeCount(p.repostCount ?? p.repostsCount ?? p.reposts),
+      postedAt: p.timestamp ?? p.takenAtIso ?? new Date().toISOString(),
+      postUrl:
+        p.url ?? (p.shortCode ? `https://www.instagram.com/p/${p.shortCode}/` : ""),
+      thumbnailUrl: p.displayUrl ?? p.display_url,
+      locationName: p.locationName,
+    })) as RawPost[];
   });
 }
 
@@ -643,22 +431,6 @@ export interface ContentMetrics {
   plays: number;
   duration: number;
   shares: number;
-  ownerUsername?: string;
-}
-
-function itemOwnerUsername(item: Record<string, any>): string {
-  return String(
-    item.ownerUsername ??
-      item.owner?.username ??
-      item.user?.username ??
-      item.author?.username ??
-      item.authorMeta?.name ??
-      item.authorMeta?.username ??
-      ""
-  )
-    .trim()
-    .replace(/^@+/, "")
-    .toLowerCase();
 }
 
 function int(value: unknown): number {
@@ -757,8 +529,7 @@ async function resolveShortUrl(value: string): Promise<string> {
 
 export async function scrapeContentUrl(
   value: string,
-  expectedPlatform?: string | null,
-  expectedOwnerUsername?: string | null
+  expectedPlatform?: string | null
 ): Promise<ContentMetrics> {
   const resolvedUrl = await resolveShortUrl(value);
   const requested = getContentIdentity(resolvedUrl, expectedPlatform);
@@ -808,9 +579,11 @@ export async function scrapeContentUrl(
         return false;
       }
     });
-    // Jangan pernah menerima item tanpa identitas URL. Sebelumnya fallback
-    // ini membuat satu konten acak dari Actor dianggap sebagai URL yang diminta.
-    const item = matchingItem;
+    const soleItemWithoutIdentity =
+      actorItems.length === 1 && !returnedContentUrl(actorItems[0], platform)
+        ? actorItems[0]
+        : undefined;
+    const item = matchingItem ?? soleItemWithoutIdentity;
     if (!actorItems[0])
       throw new Error("Content could not be found or is not public");
     if (!item) {
@@ -823,26 +596,6 @@ export async function scrapeContentUrl(
       : requested;
     if (returnedUrl && !contentIdentityMatches(requested, returned))
       throw new Error("Scraper did not return the exact requested content");
-
-    const ownerUsername = itemOwnerUsername(item);
-    const normalizedExpectedOwner = String(expectedOwnerUsername ?? "")
-      .trim()
-      .replace(/^@+/, "")
-      .toLowerCase();
-
-    if (normalizedExpectedOwner) {
-      if (!ownerUsername) {
-        throw new Error(
-          `Scraper tidak mengembalikan owner untuk post ${contentUrl}`
-        );
-      }
-
-      if (ownerUsername !== normalizedExpectedOwner) {
-        throw new Error(
-          `Owner post tidak cocok: ${ownerUsername} !== ${normalizedExpectedOwner}`
-        );
-      }
-    }
     const verifiedContent = {
       scrapedContentUrl: returned.normalizedUrl,
       contentId: requested.contentId ?? returned.contentId ?? "",
@@ -922,7 +675,6 @@ export async function scrapeContentUrl(
             item.shares_count ??
             item.sharesCount
         ),
-        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -966,7 +718,6 @@ export async function scrapeContentUrl(
         shares: int(
           item.shareCount ?? item.share_count ?? item.stats?.shareCount
         ),
-        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -999,7 +750,6 @@ export async function scrapeContentUrl(
           Number(item.duration ?? item.durationSeconds ?? item.lengthSeconds) ||
           0,
         shares: 0,
-        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -1043,7 +793,6 @@ export async function scrapeContentUrl(
           item.duration ?? item.video?.duration ?? item.media?.[0]?.duration
         ) || 0,
       shares: int(metrics.quoteCount ?? metrics.quotes ?? item.quoteCount),
-      ownerUsername: ownerUsername || undefined,
     };
   });
 }

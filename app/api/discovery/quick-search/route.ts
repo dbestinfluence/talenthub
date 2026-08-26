@@ -1,223 +1,489 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
+
 import {
   fetchInstagramBulkPosts,
   scrapeInstagramProfileDetails,
   scrapeTiktokProfiles,
   enrichPosts,
-  type RawPost,
-  type RawProfile,
 } from "@/lib/apify";
-import { checkIndonesianLocation, classifyAccountCategory } from "@/lib/gemini";
-import { persistCreatorProfile } from "@/lib/creator-processor";
-import { firstProfileImageUrl } from "@/lib/profile-image";
-import { prisma } from "@/lib/prisma";
 
+import {
+  checkIndonesianLocation,
+  classifyAccountCategory,
+} from "@/lib/gemini";
+
+import {
+  persistCreatorProfile,
+} from "@/lib/creator-processor";
+
+import {
+  firstProfileImageUrl,
+} from "@/lib/profile-image";
+
+import {
+  prisma,
+} from "@/lib/prisma";
+
+/*
+ * Beri batas waktu di bawah maksimum
+ * lima menit Vercel.
+ */
 export const maxDuration = 280;
 
-const TARGET_POST_COUNT = 20;
-const CANDIDATE_COUNT = 40;
-const REFILL_BATCH_SIZE = 5;
+/*
+ * Quick Search hanya mengambil
+ * 12 postingan terbaru.
+ */
+const QUICK_SEARCH_POST_LIMIT = 12;
 
-async function getVerifiedInstagramPosts(
-  candidates: RawPost[],
-  expectedUsername: string
-): Promise<RawPost[]> {
-  const verifiedPosts: RawPost[] = [];
-  let cursor = 0;
-  let firstBatch = true;
+/*
+ * Enrichment dijalankan satu per satu.
+ */
+const ENRICHMENT_CONCURRENCY = 1;
 
-  while (
-    verifiedPosts.length < TARGET_POST_COUNT &&
-    cursor < candidates.length
-  ) {
-    const remaining = TARGET_POST_COUNT - verifiedPosts.length;
-    const batchSize = firstBatch
-      ? TARGET_POST_COUNT
-      : Math.min(REFILL_BATCH_SIZE, remaining);
+export async function POST(
+  request: NextRequest
+) {
+  const body = await request
+    .json()
+    .catch(() => null);
 
-    firstBatch = false;
-    const batch = candidates.slice(cursor, cursor + batchSize);
-    cursor += batch.length;
-    if (batch.length === 0) break;
+  const username = String(
+    body?.username ?? ""
+  )
+    .trim()
+    .replace(/^@+/, "");
 
-    const verifiedBatch = await enrichPosts(batch, "instagram", {
-      concurrency: 5,
-      dropFailed: true,
-      expectedUsername,
-    });
+  const socialMedia = String(
+    body?.socialMedia ?? ""
+  )
+    .trim()
+    .toLowerCase();
 
-    verifiedPosts.push(...verifiedBatch);
-
-    console.log(
-      `  [QUICK SEARCH] verified=${verifiedPosts.length}/${TARGET_POST_COUNT}, checked=${cursor}/${candidates.length}`
+  if (!username) {
+    return NextResponse.json(
+      {
+        error: "Username wajib diisi",
+      },
+      {
+        status: 400,
+      }
     );
   }
 
-  return verifiedPosts
-    .sort(
-      (a, b) =>
-        new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
-    )
-    .slice(0, TARGET_POST_COUNT);
-}
-
-export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null);
-  const username = String(body?.username ?? "").trim().replace(/^@+/, "");
-  const socialMedia = String(body?.socialMedia ?? "").toLowerCase();
-
-  if (!username) {
-    return NextResponse.json({ error: "Username wajib diisi" }, { status: 400 });
-  }
-
-  if (socialMedia !== "instagram" && socialMedia !== "tiktok") {
+  if (
+    socialMedia !== "instagram" &&
+    socialMedia !== "tiktok"
+  ) {
     return NextResponse.json(
-      { error: "Pilih social media dulu" },
-      { status: 400 }
+      {
+        error:
+          "Pilih social media terlebih dahulu",
+      },
+      {
+        status: 400,
+      }
     );
   }
 
   try {
-    let profile: RawProfile;
+    /*
+     * ========================================================
+     * STEP 1 — AMBIL PROFILE DAN BULK POST
+     * ========================================================
+     */
+
+    let profile;
 
     if (socialMedia === "instagram") {
-      const [details] = await scrapeInstagramProfileDetails([username]);
+      /*
+       * Ambil detail profile terlebih dahulu.
+       */
+      const [details] =
+        await scrapeInstagramProfileDetails([
+          username,
+        ]);
 
-      if (!details || !details.isValid) {
+      if (
+        !details ||
+        !details.isValid
+      ) {
         return NextResponse.json({
           inserted: false,
           reason: "not_found",
-          message: "Akun tidak ditemukan / tidak valid.",
+          message:
+            "Akun tidak ditemukan atau tidak valid.",
           preview: null,
         });
       }
 
-      const bulkPosts = await fetchInstagramBulkPosts(
-        details.username,
-        undefined,
-        CANDIDATE_COUNT
-      );
+      /*
+       * Hanya mengambil maksimal 12 post.
+       */
+      const bulkPosts =
+        await fetchInstagramBulkPosts(
+          details.username,
+          undefined,
+          QUICK_SEARCH_POST_LIMIT
+        );
 
-      profile = { ...details, posts: bulkPosts };
+      profile = {
+        ...details,
+
+        /*
+         * Pastikan tetap maksimal 12 post,
+         * walaupun Actor mengembalikan lebih.
+         */
+        posts: bulkPosts
+          .sort(
+            (a, b) =>
+              new Date(
+                b.postedAt
+              ).getTime() -
+              new Date(
+                a.postedAt
+              ).getTime()
+          )
+          .slice(
+            0,
+            QUICK_SEARCH_POST_LIMIT
+          ),
+      };
     } else {
-      const [tiktokProfile] = await scrapeTiktokProfiles(
-        [username],
-        undefined,
-        TARGET_POST_COUNT,
-        { enrichPosts: false }
-      );
+      /*
+       * TikTok juga hanya mengambil 12 post.
+       *
+       * enrichPosts: false karena enrichment
+       * dilakukan setelah pengecekan Indonesia.
+       */
+      const [tiktokProfile] =
+        await scrapeTiktokProfiles(
+          [username],
+          undefined,
+          QUICK_SEARCH_POST_LIMIT,
+          {
+            enrichPosts: false,
+          }
+        );
 
-      if (!tiktokProfile || !tiktokProfile.isValid) {
+      if (
+        !tiktokProfile ||
+        !tiktokProfile.isValid
+      ) {
         return NextResponse.json({
           inserted: false,
           reason: "not_found",
-          message: "Akun tidak ditemukan / tidak valid.",
+          message:
+            "Akun tidak ditemukan atau tidak valid.",
           preview: null,
         });
       }
 
-      profile = tiktokProfile;
+      profile = {
+        ...tiktokProfile,
+        posts: tiktokProfile.posts
+          .sort(
+            (a, b) =>
+              new Date(
+                b.postedAt
+              ).getTime() -
+              new Date(
+                a.postedAt
+              ).getTime()
+          )
+          .slice(
+            0,
+            QUICK_SEARCH_POST_LIMIT
+          ),
+      };
     }
+
+    /*
+     * Jangan lanjut apabila Actor tidak
+     * mengembalikan postingan.
+     */
+    if (profile.posts.length === 0) {
+      return NextResponse.json(
+        {
+          inserted: false,
+          reason: "no_posts",
+          message:
+            "Tidak ada postingan yang berhasil diambil.",
+          preview: null,
+        },
+        {
+          status: 422,
+        }
+      );
+    }
+
+    /*
+     * ========================================================
+     * STEP 2 — BUAT PREVIEW
+     * ========================================================
+     */
 
     const preview = {
       username: profile.username,
-      socialMedia: profile.socialMedia,
-      followers: profile.followers,
-      following: profile.following,
-      totalPost: profile.totalPost,
-      photoUrl: firstProfileImageUrl([
-        ...(profile.photoUrls ?? []),
-        profile.photoUrl,
-      ]),
-      bio: profile.bio ?? "",
+      socialMedia:
+        profile.socialMedia,
+      followers:
+        profile.followers,
+      following:
+        profile.following,
+      totalPost:
+        profile.totalPost,
+
+      photoUrl:
+        firstProfileImageUrl([
+          ...(profile.photoUrls ?? []),
+          profile.photoUrl,
+        ]),
+
+      bio:
+        profile.bio ?? "",
+
+      benchmarkPostCount:
+        profile.posts.length,
     };
 
-    const locationCheck = await checkIndonesianLocation(
-      profile.bio ?? "",
-      profile.posts
-    );
+    /*
+     * ========================================================
+     * STEP 3 — CEK LOKASI INDONESIA
+     * ========================================================
+     *
+     * Dilakukan sebelum enrichment agar akun
+     * yang ditolak tidak menghabiskan banyak
+     * request Apify.
+     */
 
-    if (!locationCheck.isIndonesian) {
+    const locationCheck =
+      await checkIndonesianLocation(
+        profile.bio ?? "",
+        profile.posts
+      );
+
+    if (
+      !locationCheck.isIndonesian
+    ) {
       return NextResponse.json({
         inserted: false,
         reason: "not_indonesia",
-        message: "Akun terdeteksi bukan dari Indonesia — tidak disimpan.",
+        message:
+          "Akun terdeteksi bukan dari Indonesia — tidak disimpan ke database.",
         preview,
       });
     }
 
-    const [verifiedPosts, existingCategories] = await Promise.all([
-      socialMedia === "instagram"
-        ? getVerifiedInstagramPosts(profile.posts, profile.username)
-        : enrichPosts(profile.posts.slice(0, TARGET_POST_COUNT), "tiktok", {
-            concurrency: 5,
-            dropFailed: true,
-            expectedUsername: profile.username,
-          }),
-      prisma.mst_categories.findMany({ select: { name: true } }),
+    /*
+     * ========================================================
+     * STEP 4 — ENRICHMENT POST SATU PER SATU
+     * ========================================================
+     *
+     * concurrency: 1 berarti Actor detail
+     * hanya memproses satu URL pada satu waktu.
+     *
+     * Jika satu post gagal enrichment,
+     * fungsi enrichPosts akan menggunakan
+     * data bulk sebagai fallback.
+     */
+
+    const [
+      enrichedPosts,
+      existingCategories,
+    ] = await Promise.all([
+      enrichPosts(
+        profile.posts.slice(
+          0,
+          QUICK_SEARCH_POST_LIMIT
+        ),
+        socialMedia as
+          | "instagram"
+          | "tiktok",
+        {
+          concurrency:
+            ENRICHMENT_CONCURRENCY,
+        }
+      ),
+
+      prisma.mst_categories.findMany({
+        select: {
+          name: true,
+        },
+      }),
     ]);
 
-    if (verifiedPosts.length === 0) {
+    /*
+     * Jangan simpan jika tidak ada post
+     * yang dapat dikembalikan.
+     */
+    if (
+      enrichedPosts.length === 0
+    ) {
       return NextResponse.json(
         {
           inserted: false,
-          reason: "no_verified_posts",
+          reason: "enrichment_failed",
           message:
-            "Tidak ada post yang lolos verifikasi URL dan pemilik. Data lama tidak diubah.",
+            "Postingan tidak berhasil diproses.",
           preview,
         },
-        { status: 422 }
+        {
+          status: 422,
+        }
       );
     }
 
-    const categoryName = await classifyAccountCategory(
-      profile.username,
-      profile.bio ?? "",
-      verifiedPosts,
-      existingCategories.map((category) => category.name)
-    );
+    /*
+     * ========================================================
+     * STEP 5 — KLASIFIKASI KATEGORI
+     * ========================================================
+     */
 
-    let cityId: number | undefined;
-    if (locationCheck.cityGuess) {
-      const city = await prisma.mst_cities.findFirst({
-        where: {
-          name: { contains: locationCheck.cityGuess, mode: "insensitive" },
-        },
-      });
+    const categoryName =
+      await classifyAccountCategory(
+        profile.username,
+        profile.bio ?? "",
+
+        /*
+         * Gunakan post hasil enrichment,
+         * bukan post mentah.
+         */
+        enrichedPosts,
+
+        existingCategories.map(
+          (category) =>
+            category.name
+        )
+      );
+
+    /*
+     * ========================================================
+     * STEP 6 — CARI CITY
+     * ========================================================
+     */
+
+    let cityId:
+      | number
+      | undefined;
+
+    if (
+      locationCheck.cityGuess
+    ) {
+      const city =
+        await prisma.mst_cities.findFirst({
+          where: {
+            name: {
+              contains:
+                locationCheck.cityGuess,
+              mode: "insensitive",
+            },
+          },
+        });
+
       cityId = city?.id;
     }
 
-    let category = await prisma.mst_categories.findFirst({
-      where: { name: { equals: categoryName, mode: "insensitive" } },
-    });
+    /*
+     * ========================================================
+     * STEP 7 — CARI ATAU BUAT KATEGORI
+     * ========================================================
+     */
 
-    if (!category && categoryName) {
-      category = await prisma.mst_categories.create({
-        data: { name: categoryName },
+    let category =
+      await prisma.mst_categories.findFirst({
+        where: {
+          name: {
+            equals:
+              categoryName,
+            mode: "insensitive",
+          },
+        },
       });
+
+    if (
+      !category &&
+      categoryName
+    ) {
+      category =
+        await prisma.mst_categories.create({
+          data: {
+            name:
+              categoryName,
+          },
+        });
     }
 
-    const creatorId = await persistCreatorProfile(
-      { ...profile, posts: verifiedPosts },
-      {
-        categoryId: category?.id ?? null,
-        cityId,
-        skipPostEnrichment: true,
-        replaceStoredPosts: true,
-      }
-    );
+    /*
+     * ========================================================
+     * STEP 8 — SIMPAN CREATOR DAN 12 POST
+     * ========================================================
+     */
+
+    const creatorId =
+      await persistCreatorProfile(
+        {
+          ...profile,
+
+          /*
+           * Maksimal berisi 12 post.
+           */
+          posts:
+            enrichedPosts.slice(
+              0,
+              QUICK_SEARCH_POST_LIMIT
+            ),
+        },
+        {
+          categoryId:
+            category?.id ?? null,
+
+          cityId,
+        }
+      );
+
+    /*
+     * ========================================================
+     * STEP 9 — RESPONSE
+     * ========================================================
+     */
 
     return NextResponse.json({
       inserted: true,
       creatorId,
-      verifiedPostCount: verifiedPosts.length,
-      preview: { ...preview, categoryName: category?.name ?? categoryName },
+
+      postCount:
+        enrichedPosts.length,
+
+      message:
+        `${enrichedPosts.length} postingan berhasil diproses.`,
+
+      preview: {
+        ...preview,
+
+        categoryName:
+          category?.name ??
+          categoryName,
+      },
     });
   } catch (error) {
-    console.error("Quick search error:", error);
+    console.error(
+      "Quick search error:",
+      error
+    );
+
     return NextResponse.json(
-      { error: "Gagal melakukan scraping, coba lagi." },
-      { status: 500 }
+      {
+        inserted: false,
+        error:
+          "Gagal melakukan scraping, coba lagi.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
