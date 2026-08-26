@@ -25,17 +25,8 @@ export interface SeedEntry {
 export interface PersistOptions {
   categoryId?: number | null;
   cityId?: number | null;
-
-  /**
-   * true:
-   * Post sudah di-enrich sebelum masuk persistCreatorProfile.
-   * Biasanya digunakan oleh Quick Search.
-   *
-   * false:
-   * persistCreatorProfile akan melakukan enrichment sendiri.
-   * Biasanya digunakan oleh scheduler/pipeline.
-   */
   skipPostEnrichment?: boolean;
+  replaceStoredPosts?: boolean;
 }
 
 const SHARES_SAVES_ENRICHMENT_LIMIT = 20;
@@ -55,14 +46,8 @@ function isValidDate(value: string | Date | null | undefined): boolean {
   return Number.isFinite(time);
 }
 
-function safeMetric(
-  value: number | null | undefined
-): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    value < 0
-  ) {
+function safeMetric(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return 0;
   }
 
@@ -77,9 +62,7 @@ export async function persistCreatorProfile(
   profile: RawProfile,
   options: PersistOptions = {}
 ): Promise<number> {
-  const normalizedProfileUsername = normalizeUsername(
-    profile.username
-  );
+  const normalizedProfileUsername = normalizeUsername(profile.username);
 
   /*
    * Hanya gunakan post yang mempunyai:
@@ -100,10 +83,7 @@ export async function persistCreatorProfile(
    * Deteksi endorsement harus menggunakan post yang
    * benar-benar akan disimpan agar index-nya konsisten.
    */
-  const endorseResults = await detectEndorsePosts(
-    profile.username,
-    validPosts
-  );
+  const endorseResults = await detectEndorsePosts(profile.username, validPosts);
 
   const tier = calculateTier(profile.followers);
 
@@ -127,9 +107,8 @@ export async function persistCreatorProfile(
   const preliminaryBrandedViews = validPosts
     .filter((_, index) => {
       return (
-        endorseResults.find(
-          (result) => result.index === index
-        )?.isEndorse ?? false
+        endorseResults.find((result) => result.index === index)?.isEndorse ??
+        false
       );
     })
     .map((post) => safeMetric(post.views))
@@ -138,10 +117,8 @@ export async function persistCreatorProfile(
   const preliminaryAverageBrandView =
     preliminaryBrandedViews.length > 0
       ? Math.round(
-          preliminaryBrandedViews.reduce(
-            (total, views) => total + views,
-            0
-          ) / preliminaryBrandedViews.length
+          preliminaryBrandedViews.reduce((total, views) => total + views, 0) /
+            preliminaryBrandedViews.length
         )
       : 0;
 
@@ -250,6 +227,18 @@ export async function persistCreatorProfile(
    * ============================================================
    */
 
+  if (options.replaceStoredPosts) {
+    const deletedPosts = await prisma.dtl_creator_posts.deleteMany({
+      where: {
+        creator_id: creator.id,
+      },
+    });
+
+    console.log(
+      `  [CLEANUP] ${deletedPosts.count} post lama ${profile.username} dihapus`
+    );
+  }
+
   let savedPosts = 0;
 
   for (let index = 0; index < validPosts.length; index++) {
@@ -257,9 +246,8 @@ export async function persistCreatorProfile(
     const postedAt = new Date(post.postedAt);
 
     const isEndorse =
-      endorseResults.find(
-        (result) => result.index === index
-      )?.isEndorse ?? false;
+      endorseResults.find((result) => result.index === index)?.isEndorse ??
+      false;
 
     try {
       await prisma.dtl_creator_posts.upsert({
@@ -336,16 +324,15 @@ export async function persistCreatorProfile(
    */
 
   if (!options.skipPostEnrichment) {
-    const latestPosts =
-      await prisma.dtl_creator_posts.findMany({
-        where: {
-          creator_id: creator.id,
-        },
-        orderBy: {
-          posted_at: "desc",
-        },
-        take: SHARES_SAVES_ENRICHMENT_LIMIT,
-      });
+    const latestPosts = await prisma.dtl_creator_posts.findMany({
+      where: {
+        creator_id: creator.id,
+      },
+      orderBy: {
+        posted_at: "desc",
+      },
+      take: SHARES_SAVES_ENRICHMENT_LIMIT,
+    });
 
     let enrichedCount = 0;
 
@@ -419,10 +406,7 @@ export async function persistCreatorProfile(
 
         enrichedCount++;
       } catch (error) {
-        console.error(
-          `  [WARN] gagal enrich ${post.post_url}:`,
-          error
-        );
+        console.error(`  [WARN] gagal enrich ${post.post_url}:`, error);
       }
     }
 
@@ -450,54 +434,49 @@ export async function persistCreatorProfile(
    * tab Data All di halaman detail.
    */
 
-  const finalStoredPosts =
-    await prisma.dtl_creator_posts.findMany({
-      where: {
-        creator_id: creator.id,
-      },
+  const finalStoredPosts = await prisma.dtl_creator_posts.findMany({
+    where: {
+      creator_id: creator.id,
+    },
 
-      orderBy: {
-        posted_at: "desc",
-      },
+    orderBy: {
+      posted_at: "desc",
+    },
 
-      select: {
-        caption: true,
+    select: {
+      caption: true,
 
-        likes: true,
-        comments: true,
-        views: true,
-        shares: true,
-        saves: true,
-        reposts: true,
+      likes: true,
+      comments: true,
+      views: true,
+      shares: true,
+      saves: true,
+      reposts: true,
 
-        post_url: true,
-        thumbnail_url: true,
-        posted_at: true,
+      post_url: true,
+      thumbnail_url: true,
+      posted_at: true,
 
-        is_endorse: true,
-      },
-    });
+      is_endorse: true,
+    },
+  });
 
-  const postsForCalculation = finalStoredPosts.map(
-    (post) => ({
-      caption: post.caption ?? "",
+  const postsForCalculation = finalStoredPosts.map((post) => ({
+    caption: post.caption ?? "",
 
-      likes: safeMetric(post.likes),
-      comments: safeMetric(post.comments),
-      views: safeMetric(post.views),
-      shares: safeMetric(post.shares),
-      saves: safeMetric(post.saves),
-      reposts: safeMetric(post.reposts),
+    likes: safeMetric(post.likes),
+    comments: safeMetric(post.comments),
+    views: safeMetric(post.views),
+    shares: safeMetric(post.shares),
+    saves: safeMetric(post.saves),
+    reposts: safeMetric(post.reposts),
 
-      postedAt:
-        post.posted_at?.toISOString() ?? "",
+    postedAt: post.posted_at?.toISOString() ?? "",
 
-      postUrl: post.post_url ?? "",
+    postUrl: post.post_url ?? "",
 
-      thumbnailUrl:
-        post.thumbnail_url ?? undefined,
-    })
-  );
+    thumbnailUrl: post.thumbnail_url ?? undefined,
+  }));
 
   /*
    * ============================================================
@@ -518,20 +497,15 @@ export async function persistCreatorProfile(
 
   const finalBrandedViews = finalStoredPosts
     .filter((post) => {
-      return (
-        post.is_endorse === true &&
-        safeMetric(post.views) > 0
-      );
+      return post.is_endorse === true && safeMetric(post.views) > 0;
     })
     .map((post) => safeMetric(post.views));
 
   const finalAverageBrandView =
     finalBrandedViews.length > 0
       ? Math.round(
-          finalBrandedViews.reduce(
-            (total, views) => total + views,
-            0
-          ) / finalBrandedViews.length
+          finalBrandedViews.reduce((total, views) => total + views, 0) /
+            finalBrandedViews.length
         )
       : 0;
 
@@ -588,8 +562,7 @@ export async function persistCreatorProfile(
     );
 
     for (const suggestedUsername of newUsernames) {
-      const normalizedSuggestedUsername =
-        normalizeUsername(suggestedUsername);
+      const normalizedSuggestedUsername = normalizeUsername(suggestedUsername);
 
       if (!normalizedSuggestedUsername) {
         continue;
@@ -614,9 +587,7 @@ export async function persistCreatorProfile(
     }
 
     if (newUsernames.length > 0) {
-      console.log(
-        `  [+] ${newUsernames.length} username baru masuk staging`
-      );
+      console.log(`  [+] ${newUsernames.length} username baru masuk staging`);
     }
   } catch (error) {
     /*
@@ -632,12 +603,8 @@ export async function persistCreatorProfile(
   return creator.id;
 }
 
-export async function processCreator(
-  entry: SeedEntry
-) {
-  console.log(
-    `\n--- ${entry.username} (${entry.platform}) ---`
-  );
+export async function processCreator(entry: SeedEntry) {
+  console.log(`\n--- ${entry.username} (${entry.platform}) ---`);
 
   /*
    * Scrape profile.
@@ -645,19 +612,13 @@ export async function processCreator(
 
   const profiles =
     entry.platform === "instagram"
-      ? await scrapeInstagramProfiles([
-          entry.username,
-        ])
-      : await scrapeTiktokProfiles([
-          entry.username,
-        ]);
+      ? await scrapeInstagramProfiles([entry.username])
+      : await scrapeTiktokProfiles([entry.username]);
 
   const profile = profiles[0];
 
   if (!profile || !profile.isValid) {
-    console.log(
-      "  [SKIP] username tidak valid/tidak ditemukan"
-    );
+    console.log("  [SKIP] username tidak valid/tidak ditemukan");
 
     return {
       status: "skipped",
@@ -669,17 +630,14 @@ export async function processCreator(
    * Cari kategori.
    */
 
-  const category =
-    await prisma.mst_categories.findFirst({
-      where: {
-        name: entry.category,
-      },
-    });
+  const category = await prisma.mst_categories.findFirst({
+    where: {
+      name: entry.category,
+    },
+  });
 
   if (!category) {
-    console.log(
-      `  [SKIP] kategori "${entry.category}" tidak ditemukan`
-    );
+    console.log(`  [SKIP] kategori "${entry.category}" tidak ditemukan`);
 
     return {
       status: "skipped",
@@ -691,11 +649,10 @@ export async function processCreator(
    * Periksa lokasi Indonesia.
    */
 
-  const locationCheck =
-    await checkIndonesianLocation(
-      profile.bio ?? "",
-      profile.posts
-    );
+  const locationCheck = await checkIndonesianLocation(
+    profile.bio ?? "",
+    profile.posts
+  );
 
   if (!locationCheck.isIndonesian) {
     console.log(
@@ -711,15 +668,14 @@ export async function processCreator(
   let cityId: number | undefined;
 
   if (locationCheck.cityGuess) {
-    const city =
-      await prisma.mst_cities.findFirst({
-        where: {
-          name: {
-            contains: locationCheck.cityGuess,
-            mode: "insensitive",
-          },
+    const city = await prisma.mst_cities.findFirst({
+      where: {
+        name: {
+          contains: locationCheck.cityGuess,
+          mode: "insensitive",
         },
-      });
+      },
+    });
 
     cityId = city?.id;
   }
@@ -729,18 +685,13 @@ export async function processCreator(
    * Karena itu skipPostEnrichment tidak perlu dikirim.
    */
 
-  const creatorId = await persistCreatorProfile(
-    profile,
-    {
-      categoryId: category.id,
-      cityId,
-    }
-  );
+  const creatorId = await persistCreatorProfile(profile, {
+    categoryId: category.id,
+    cityId,
+  });
 
   console.log(
-    `  [OK] creator id ${creatorId}, tier ${calculateTier(
-      profile.followers
-    )}`
+    `  [OK] creator id ${creatorId}, tier ${calculateTier(profile.followers)}`
   );
 
   return {

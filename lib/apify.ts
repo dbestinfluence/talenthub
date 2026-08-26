@@ -63,12 +63,17 @@ function delay(ms: number): Promise<void> {
 // bulk apa adanya supaya satu post gagal tidak menggagalkan seluruh batch.
 async function enrichPostFromContentUrl(
   fallback: RawPost,
-  platform: "instagram" | "tiktok"
+  platform: "instagram" | "tiktok",
+  expectedUsername?: string
 ): Promise<{ post: RawPost; enriched: boolean }> {
   if (!fallback.postUrl) return { post: fallback, enriched: false };
 
   try {
-    const metrics = await scrapeContentUrl(fallback.postUrl, platform);
+    const metrics = await scrapeContentUrl(
+      fallback.postUrl,
+      platform,
+      expectedUsername
+    );
     return {
       enriched: true,
       post: {
@@ -83,6 +88,8 @@ async function enrichPostFromContentUrl(
         postUrl: metrics.scrapedContentUrl || fallback.postUrl,
         thumbnailUrl: metrics.thumbnailUrl ?? fallback.thumbnailUrl,
         locationName: fallback.locationName,
+        ownerUsername:
+          metrics.ownerUsername ?? fallback.ownerUsername,
       },
     };
   } catch (err) {
@@ -106,11 +113,13 @@ export async function enrichPosts(
   options: {
     concurrency?: number;
     dropFailed?: boolean;
+    expectedUsername?: string;
   } = {}
 ): Promise<RawPost[]> {
   const {
     concurrency = 5,
     dropFailed = false,
+    expectedUsername,
   } = options;
 
   if (posts.length === 0) {
@@ -135,7 +144,8 @@ export async function enrichPosts(
       results[index] =
         await enrichPostFromContentUrl(
           posts[index],
-          platform
+          platform,
+          expectedUsername
         );
     }
   }
@@ -241,14 +251,11 @@ export async function fetchInstagramBulkPosts(
           .replace(/^@+/, "")
           .toLowerCase();
 
-        // Kalau Actor menyediakan informasi owner,
-        // owner wajib sama dengan creator yang dicari.
-        if (
-          ownerUsername &&
-          ownerUsername !== normalizedUsername
-        ) {
+        // Quick Search bersifat strict: kandidat tanpa owner juga dibuang.
+        // URL valid saja belum membuktikan post tersebut milik creator target.
+        if (ownerUsername !== normalizedUsername) {
           console.warn(
-            `  [BULK] Post dibuang karena owner berbeda: ${ownerUsername} !== ${normalizedUsername}`
+            `  [BULK] Post dibuang karena owner tidak cocok: ${ownerUsername || "unknown"} !== ${normalizedUsername}`
           );
 
           return null;
@@ -636,6 +643,22 @@ export interface ContentMetrics {
   plays: number;
   duration: number;
   shares: number;
+  ownerUsername?: string;
+}
+
+function itemOwnerUsername(item: Record<string, any>): string {
+  return String(
+    item.ownerUsername ??
+      item.owner?.username ??
+      item.user?.username ??
+      item.author?.username ??
+      item.authorMeta?.name ??
+      item.authorMeta?.username ??
+      ""
+  )
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
 }
 
 function int(value: unknown): number {
@@ -734,7 +757,8 @@ async function resolveShortUrl(value: string): Promise<string> {
 
 export async function scrapeContentUrl(
   value: string,
-  expectedPlatform?: string | null
+  expectedPlatform?: string | null,
+  expectedOwnerUsername?: string | null
 ): Promise<ContentMetrics> {
   const resolvedUrl = await resolveShortUrl(value);
   const requested = getContentIdentity(resolvedUrl, expectedPlatform);
@@ -784,11 +808,9 @@ export async function scrapeContentUrl(
         return false;
       }
     });
-    const soleItemWithoutIdentity =
-      actorItems.length === 1 && !returnedContentUrl(actorItems[0], platform)
-        ? actorItems[0]
-        : undefined;
-    const item = matchingItem ?? soleItemWithoutIdentity;
+    // Jangan pernah menerima item tanpa identitas URL. Sebelumnya fallback
+    // ini membuat satu konten acak dari Actor dianggap sebagai URL yang diminta.
+    const item = matchingItem;
     if (!actorItems[0])
       throw new Error("Content could not be found or is not public");
     if (!item) {
@@ -801,6 +823,26 @@ export async function scrapeContentUrl(
       : requested;
     if (returnedUrl && !contentIdentityMatches(requested, returned))
       throw new Error("Scraper did not return the exact requested content");
+
+    const ownerUsername = itemOwnerUsername(item);
+    const normalizedExpectedOwner = String(expectedOwnerUsername ?? "")
+      .trim()
+      .replace(/^@+/, "")
+      .toLowerCase();
+
+    if (normalizedExpectedOwner) {
+      if (!ownerUsername) {
+        throw new Error(
+          `Scraper tidak mengembalikan owner untuk post ${contentUrl}`
+        );
+      }
+
+      if (ownerUsername !== normalizedExpectedOwner) {
+        throw new Error(
+          `Owner post tidak cocok: ${ownerUsername} !== ${normalizedExpectedOwner}`
+        );
+      }
+    }
     const verifiedContent = {
       scrapedContentUrl: returned.normalizedUrl,
       contentId: requested.contentId ?? returned.contentId ?? "",
@@ -880,6 +922,7 @@ export async function scrapeContentUrl(
             item.shares_count ??
             item.sharesCount
         ),
+        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -923,6 +966,7 @@ export async function scrapeContentUrl(
         shares: int(
           item.shareCount ?? item.share_count ?? item.stats?.shareCount
         ),
+        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -955,6 +999,7 @@ export async function scrapeContentUrl(
           Number(item.duration ?? item.durationSeconds ?? item.lengthSeconds) ||
           0,
         shares: 0,
+        ownerUsername: ownerUsername || undefined,
       };
     }
 
@@ -998,6 +1043,7 @@ export async function scrapeContentUrl(
           item.duration ?? item.video?.duration ?? item.media?.[0]?.duration
         ) || 0,
       shares: int(metrics.quoteCount ?? metrics.quotes ?? item.quoteCount),
+      ownerUsername: ownerUsername || undefined,
     };
   });
 }
