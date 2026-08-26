@@ -13,7 +13,10 @@ export interface RawPost {
   postedAt: string;
   postUrl: string;
   thumbnailUrl?: string;
-  locationName?: string; // dipakai pipeline.ts untuk deteksi kota (mostCommonLocation)
+  locationName?: string;
+
+  // Dipakai untuk memastikan post memang milik creator.
+  ownerUsername?: string;
 }
 
 export interface RawProfile {
@@ -97,78 +100,280 @@ async function enrichPostFromContentUrl(
 // diam-diam (fallback ke data bulk yang shares/saves/reposts-nya 0) tidak
 // pernah terjadi tanpa disadari di pipeline pemanggilnya.
 // ganti enrichPosts lama dengan versi ber-concurrency
-async function enrichPosts(
+export async function enrichPosts(
   posts: RawPost[],
   platform: "instagram" | "tiktok",
-  options: { concurrency?: number } = {}
+  options: {
+    concurrency?: number;
+    dropFailed?: boolean;
+  } = {}
 ): Promise<RawPost[]> {
-  const { concurrency = 5 } = options; // sesuaikan dgn jumlah token di apify-token-pool
-  const enriched: RawPost[] = new Array(posts.length);
-  let successCount = 0;
+  const {
+    concurrency = 5,
+    dropFailed = false,
+  } = options;
+
+  if (posts.length === 0) {
+    return [];
+  }
+
+  const results: Array<{
+    post: RawPost;
+    enriched: boolean;
+  } | null> = new Array(posts.length).fill(null);
+
   let cursor = 0;
 
   async function worker() {
     while (true) {
-      const i = cursor++;
-      if (i >= posts.length) return;
-      const result = await enrichPostFromContentUrl(posts[i], platform);
-      enriched[i] = result.post;
-      if (result.enriched) successCount++;
+      const index = cursor++;
+
+      if (index >= posts.length) {
+        return;
+      }
+
+      results[index] =
+        await enrichPostFromContentUrl(
+          posts[index],
+          platform
+        );
     }
   }
 
-  const workerCount = Math.min(concurrency, posts.length);
-  await Promise.all(Array.from({ length: workerCount }, worker));
-
-  console.log(
-    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil di-enrich (concurrency=${workerCount})`
+  const workerCount = Math.min(
+    Math.max(1, concurrency),
+    posts.length
   );
 
+  await Promise.all(
+    Array.from(
+      { length: workerCount },
+      () => worker()
+    )
+  );
+
+  const completedResults = results.filter(
+    (
+      result
+    ): result is {
+      post: RawPost;
+      enriched: boolean;
+    } => result !== null
+  );
+
+  const successCount = completedResults.filter(
+    (result) => result.enriched
+  ).length;
+
+  console.log(
+    `  [ENRICH] ${platform}: ${successCount}/${posts.length} post berhasil diverifikasi (concurrency=${workerCount})`
+  );
+
+  // Mode strict untuk Quick Search:
+  // hasil yang gagal diverifikasi tidak dikembalikan.
+  if (dropFailed) {
+    return completedResults
+      .filter((result) => result.enriched)
+      .map((result) => result.post);
+  }
+
+  // Mode biasa untuk background pipeline:
+  // post gagal memakai data bulk.
   if (posts.length > 0 && successCount === 0) {
     throw new Error(
-      `Enrichment gagal total untuk ${posts.length} post (platform: ${platform}). ` +
-        `Kemungkinan actor scrapeContentUrl sedang bermasalah (cek Apify console).`
+      `Enrichment gagal total untuk ${posts.length} post (platform: ${platform})`
     );
   }
 
-  return enriched;
+  return completedResults.map(
+    (result) => result.post
+  );
 }
 
-// export supaya bisa dipanggil manual dari route (setelah gating check)
-export { enrichPosts };
 
 // BARU: bulk fetch instagram posts TANPA enrichment — dipakai buat quick search
 // biar cek Indonesia bisa jalan duluan sebelum buang waktu enrich.
 export async function fetchInstagramBulkPosts(
   username: string,
   sinceDate?: Date,
-  limit = 20
+  candidateLimit = 40
 ): Promise<RawPost[]> {
+  const normalizedUsername = username
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+
   return withApifyClient(async (client) => {
-    const input: Record<string, any> = {
-      directUrls: [`https://www.instagram.com/${username}/`],
+    const input: Record<string, unknown> = {
+      directUrls: [
+        `https://www.instagram.com/${normalizedUsername}/`,
+      ],
       resultsType: "posts",
-      resultsLimit: limit,
+      resultsLimit: candidateLimit,
     };
-    if (sinceDate) input.onlyPostsNewerThan = sinceDate.toISOString().slice(0, 10);
 
-    const run = await client.actor("apify/instagram-scraper").call(input);
-    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+    if (sinceDate) {
+      input.onlyPostsNewerThan = sinceDate
+        .toISOString()
+        .slice(0, 10);
+    }
 
-    return (items as any[]).slice(0, limit).map((p: any) => ({
-      caption: p.caption ?? "",
-      likes: normalizeCount(p.likesCount ?? p.likeCount ?? p.likes),
-      comments: normalizeCount(p.commentsCount ?? p.commentCount ?? p.comments),
-      views: normalizeCount(p.videoViewCount ?? p.viewsCount ?? p.views),
-      shares: normalizeCount(p.shareCount ?? p.sharesCount ?? p.shares),
-      saves: normalizeCount(p.saveCount ?? p.savesCount ?? p.saves),
-      reposts: normalizeCount(p.repostCount ?? p.repostsCount ?? p.reposts),
-      postedAt: p.timestamp ?? p.takenAtIso ?? new Date().toISOString(),
-      postUrl:
-        p.url ?? (p.shortCode ? `https://www.instagram.com/p/${p.shortCode}/` : ""),
-      thumbnailUrl: p.displayUrl ?? p.display_url,
-      locationName: p.locationName,
-    })) as RawPost[];
+    const run = await client
+      .actor("apify/instagram-scraper")
+      .call(input);
+
+    const { items } = await client
+      .dataset(run.defaultDatasetId)
+      .listItems();
+
+    const seenContentIds = new Set<string>();
+
+    const posts = (items as any[])
+      .map((item): RawPost | null => {
+        const ownerUsername = String(
+          item.ownerUsername ??
+            item.owner?.username ??
+            item.user?.username ??
+            item.author?.username ??
+            ""
+        )
+          .trim()
+          .replace(/^@+/, "")
+          .toLowerCase();
+
+        // Kalau Actor menyediakan informasi owner,
+        // owner wajib sama dengan creator yang dicari.
+        if (
+          ownerUsername &&
+          ownerUsername !== normalizedUsername
+        ) {
+          console.warn(
+            `  [BULK] Post dibuang karena owner berbeda: ${ownerUsername} !== ${normalizedUsername}`
+          );
+
+          return null;
+        }
+
+        const shortCode = String(
+          item.shortCode ??
+            item.shortcode ??
+            item.code ??
+            ""
+        ).trim();
+
+        const postUrl = String(
+          item.url ??
+            item.postUrl ??
+            (shortCode
+              ? `https://www.instagram.com/p/${shortCode}/`
+              : "")
+        ).trim();
+
+        const postedAt = String(
+          item.timestamp ??
+            item.takenAtIso ??
+            item.taken_at ??
+            ""
+        ).trim();
+
+        if (!postUrl || !postedAt) {
+          return null;
+        }
+
+        let contentIdentity: string;
+
+        try {
+          const identity = getContentIdentity(
+            postUrl,
+            "instagram"
+          );
+
+          contentIdentity =
+            identity.contentId ??
+            identity.normalizedUrl;
+        } catch {
+          console.warn(
+            `  [BULK] URL post tidak valid dan dibuang: ${postUrl}`
+          );
+
+          return null;
+        }
+
+        if (seenContentIds.has(contentIdentity)) {
+          return null;
+        }
+
+        seenContentIds.add(contentIdentity);
+
+        return {
+          caption: item.caption ?? "",
+
+          likes: normalizeCount(
+            item.likesCount ??
+              item.likeCount ??
+              item.likes
+          ),
+
+          comments: normalizeCount(
+            item.commentsCount ??
+              item.commentCount ??
+              item.comments
+          ),
+
+          views: normalizeCount(
+            item.videoViewCount ??
+              item.videoPlayCount ??
+              item.viewsCount ??
+              item.views
+          ),
+
+          shares: normalizeCount(
+            item.shareCount ??
+              item.sharesCount ??
+              item.shares
+          ),
+
+          saves: normalizeCount(
+            item.saveCount ??
+              item.savesCount ??
+              item.saves
+          ),
+
+          reposts: normalizeCount(
+            item.repostCount ??
+              item.repostsCount ??
+              item.reposts
+          ),
+
+          postedAt,
+          postUrl,
+
+          thumbnailUrl:
+            item.displayUrl ??
+            item.display_url ??
+            item.thumbnailUrl,
+
+          locationName: item.locationName,
+
+          ownerUsername:
+            ownerUsername || undefined,
+        };
+      })
+      .filter(
+        (post): post is RawPost =>
+          post !== null
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.postedAt).getTime() -
+          new Date(a.postedAt).getTime()
+      );
+
+    console.log(
+      `  [BULK] ${normalizedUsername}: ${posts.length}/${items.length} kandidat lolos filter awal`
+    );
+
+    return posts;
   });
 }
 
