@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     // ============================================================
     const [enrichedPosts, existingCategories] = await Promise.all([
       enrichPosts(profile.posts, socialMedia as "instagram" | "tiktok", {
-        concurrency: 5,
+        concurrency: 4,
       }),
       prisma.mst_categories.findMany({ select: { name: true } }),
     ]);
