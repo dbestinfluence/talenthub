@@ -51,6 +51,8 @@ function calculateTier(followers: number): string {
 export interface PersistOptions {
   categoryId?: number | null;
   cityId?: number | null;
+  skipPostEnrichment?: boolean;
+  replaceStoredPosts?: boolean;
 }
 
 // Dipakai baik oleh processCreator (seed script) maupun quick-search API,
@@ -158,6 +160,15 @@ export async function persistCreatorProfile(
     },
   });
 
+  if (options.replaceStoredPosts) {
+    const deleted = await prisma.dtl_creator_posts.deleteMany({
+      where: { creator_id: creator.id },
+    });
+    console.log(
+      `  [CLEANUP] ${deleted.count} post lama ${profile.username} dihapus`
+    );
+  }
+
   let savedPosts = 0;
   for (let i = 0; i < profile.posts.length; i++) {
     const p = profile.posts[i];
@@ -211,11 +222,19 @@ export async function persistCreatorProfile(
   // Bulk scraper TIDAK reliable untuk metrik ini — scrapeContentUrl (actor
   // detail per-URL) sudah terbukti akurat untuk ketiganya (lihat ContentMetrics),
   // jadi dipakai di sini untuk memperkaya data yang sudah di-upsert di atas.
-  const latestPosts = await prisma.dtl_creator_posts.findMany({
-    where: { creator_id: creator.id },
-    orderBy: { posted_at: "desc" },
-    take: SHARES_SAVES_ENRICHMENT_LIMIT,
-  });
+  const latestPosts = options.skipPostEnrichment
+    ? []
+    : await prisma.dtl_creator_posts.findMany({
+        where: { creator_id: creator.id },
+        orderBy: { posted_at: "desc" },
+        take: SHARES_SAVES_ENRICHMENT_LIMIT,
+      });
+
+  if (options.skipPostEnrichment) {
+    console.log(
+      "  [SKIP] enrichment di creator-processor dilewati karena post sudah diproses"
+    );
+  }
 
   let enrichedCount = 0;
   for (const post of latestPosts) {
@@ -238,7 +257,8 @@ export async function persistCreatorProfile(
     try {
       const metrics = await scrapeContentUrl(
         post.post_url,
-        profile.socialMedia
+        profile.socialMedia,
+        profile.username
       );
       await prisma.dtl_creator_posts.update({
         where: { id: post.id },
