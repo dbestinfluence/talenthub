@@ -17,7 +17,7 @@ import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 280;
 
-const QUICK_SEARCH_POST_LIMIT = 10;
+const QUICK_SEARCH_POST_LIMIT = 14;
 const ENRICHMENT_CONCURRENCY = 1;
 
 function normalizeUsername(value: string): string {
