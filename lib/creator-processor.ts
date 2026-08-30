@@ -12,7 +12,10 @@ import {
   checkIndonesianLocation,
 } from "./gemini";
 import { computeInsightsFromPosts } from "./insights";
-import { firstProfileImageUrl } from "./profile-image";
+import {
+  firstProfileImageUrl,
+  persistFirstProfileImage,
+} from "./profile-image";
 
 const prisma = new PrismaClient();
 
@@ -82,10 +85,38 @@ export async function persistCreatorProfile(
   const avgViewBrand = average(brandedViews);
 
   const tier = calculateTier(profile.followers);
-  const persistedPhoto = firstProfileImageUrl([
+
+  const existingCreator = await prisma.mst_creators.findUnique({
+    where: {
+      username_social_media: {
+        username: profile.username,
+        social_media: profile.socialMedia,
+      },
+    },
+    select: {
+      photo_url: true,
+    },
+  });
+
+  const temporaryPhotoUrl = firstProfileImageUrl([
     ...(profile.photoUrls ?? []),
     profile.photoUrl,
   ]);
+
+  const uploadedPhotoUrl = temporaryPhotoUrl
+    ? await persistFirstProfileImage(
+        [temporaryPhotoUrl],
+        {
+          username: profile.username,
+          platform: profile.socialMedia as "instagram" | "tiktok",
+        }
+      )
+    : null;
+
+  // Jika download/upload Blob gagal, pertahankan foto permanen sebelumnya.
+  // URL CDN Instagram/TikTok yang sementara tidak disimpan ke photo_url.
+  const persistedPhoto =
+    uploadedPhotoUrl ?? existingCreator?.photo_url ?? null;
 
   const validPosts = profile.posts.filter(
     (post) => post.likes >= 0 && post.comments >= 0 && Boolean(post.postUrl)
@@ -112,7 +143,9 @@ export async function persistCreatorProfile(
       followers: profile.followers,
       following: profile.following,
       total_post: profile.totalPost,
-      photo_url: persistedPhoto,
+      ...(persistedPhoto
+        ? { photo_url: persistedPhoto }
+        : {}),
       tier,
       average_view: Math.round(avgView),
       average_view_brand: Math.round(avgViewBrand),
@@ -130,7 +163,6 @@ export async function persistCreatorProfile(
         ? { category_id: options.categoryId }
         : {}),
       ...(options.cityId != null ? { city_id: options.cityId } : {}),
-      last_scraped_at: new Date(),
       updated_at: new Date(),
     },
     create: {
