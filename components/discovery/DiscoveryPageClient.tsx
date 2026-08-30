@@ -67,27 +67,36 @@ const DEFAULT_DISCOVERY_FILTERS = [
 
 function profilePhotoSource(value: string | null): string {
   const url = String(value ?? "").trim();
-  if (!url) return "/image/default-kol-avatar.png";
-  if (url.startsWith("/") || url.startsWith("data:image/")) return url;
-  return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+
+  if (!url) {
+    return "/image/default-kol-avatar.png";
+  }
+
+  // Foto yang sudah tersimpan di Vercel Blob bersifat publik,
+  // sehingga bisa langsung digunakan tanpa /api/image-proxy.
+  if (
+    url.startsWith("/") ||
+    url.startsWith("data:image/") ||
+    url.startsWith("blob:") ||
+    /^https?:\/\//i.test(url)
+  ) {
+    return url;
+  }
+
+  return "/image/default-kol-avatar.png";
 }
 
 function handleProfilePhotoError(
-  event: SyntheticEvent<HTMLImageElement>,
-  databaseUrl: string | null
+  event: SyntheticEvent<HTMLImageElement>
 ) {
   const image = event.currentTarget;
-  const rawUrl = String(databaseUrl ?? "").trim();
 
-  if (/^https?:\/\//i.test(rawUrl) && image.dataset.directTried !== "true") {
-    image.dataset.directTried = "true";
-    image.src = rawUrl;
+  if (image.dataset.fallbackApplied === "true") {
     return;
   }
 
-  if (!image.src.endsWith("/image/default-kol-avatar.png")) {
-    image.src = "/image/default-kol-avatar.png";
-  }
+  image.dataset.fallbackApplied = "true";
+  image.src = "/image/default-kol-avatar.png";
 }
 
 // --- BARU: badge kecil buat nampilin Instagram / TikTok di kolom tabel ---
@@ -1145,9 +1154,7 @@ export default function CreatorDiscoveryPage() {
                           alt={`${row.name} profile`}
                           className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
-                          onError={(event) =>
-                            handleProfilePhotoError(event, row.photo_url)
-                          }
+                          onError={handleProfilePhotoError}
                         />
                       </div>
                     </td>
@@ -1445,9 +1452,7 @@ export default function CreatorDiscoveryPage() {
                       >
                         <img
                           src={profilePhotoSource(creator.photo_url)}
-                          onError={(event) =>
-                            handleProfilePhotoError(event, creator.photo_url)
-                          }
+                          onError={handleProfilePhotoError}
                           alt=""
                           className="h-9 w-9 rounded-full bg-slate-100 object-cover"
                         />
