@@ -199,7 +199,84 @@ function proxied(url?: string | null): string {
   const value = String(url ?? "").trim();
   if (!value) return "";
   if (value.startsWith("/") || value.startsWith("data:image/")) return value;
+
+  /*
+   * File di Vercel Blob sudah public dan stabil, jadi gunakan URL-nya
+   * secara langsung. Jangan lewatkan ke /api/image-proxy karena proxy
+   * dapat membatasi host eksternal dan menyebabkan gambar tidak tampil.
+   */
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+
+    if (
+      hostname === "blob.vercel-storage.com" ||
+      hostname.endsWith(".blob.vercel-storage.com")
+    ) {
+      return value;
+    }
+  } catch {
+    return "";
+  }
+
   return "/api/image-proxy?url=" + encodeURIComponent(value);
+}
+
+/**
+ * Avatar default hanya boleh dipakai untuk foto profil.
+ * Jangan pernah menampilkannya sebagai thumbnail konten.
+ */
+function imageIdentity(value?: string | null): string {
+  const url = String(value ?? "").trim();
+
+  if (!url) return "";
+
+  if (url.startsWith("data:image/")) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url, "https://talenthub.local");
+
+    return (
+      parsed.hostname.toLowerCase() +
+      parsed.pathname.toLowerCase().replace(/\/+$/, "")
+    );
+  } catch {
+    return url.toLowerCase().split("?")[0];
+  }
+}
+
+function contentThumbnailSource(
+  thumbnailUrl?: string | null,
+  profilePhotoUrl?: string | null
+): string {
+  const thumbnail = String(thumbnailUrl ?? "").trim();
+
+  if (!thumbnail) return "";
+
+  /*
+   * Ada data lama yang menyimpan foto profil sebagai thumbnail post.
+   * Jika gambar post sama dengan foto profil, anggap thumbnail tidak ada.
+   */
+  if (
+    profilePhotoUrl &&
+    imageIdentity(thumbnail) === imageIdentity(profilePhotoUrl)
+  ) {
+    return "";
+  }
+
+  const normalizedThumbnail = thumbnail.toLowerCase().split("?")[0];
+
+  if (
+    normalizedThumbnail.includes("default-kol-avatar") ||
+    normalizedThumbnail.includes("default-profile") ||
+    normalizedThumbnail.includes("profile-placeholder") ||
+    normalizedThumbnail.includes("user-placeholder")
+  ) {
+    return "";
+  }
+
+  return proxied(thumbnail);
 }
 
 // Outline-icon-in-a-box style, matching the step-indicator look
@@ -469,9 +546,19 @@ function TagListCard({
 
 // Bigger card for the content grid: large square thumbnail on top,
 // likes/comments/views/shares/saves as caption underneath.
-function PostCard({ post }: { post: Post }) {
+function PostCard({
+  post,
+  profilePhotoUrl,
+}: {
+  post: Post;
+  profilePhotoUrl: string | null;
+}) {
   const likesHidden = isHiddenCount(post.likes);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const thumbnailSrc = contentThumbnailSource(
+    post.thumbnailUrl,
+    profilePhotoUrl
+  );
 
   return (
     <a
@@ -481,18 +568,16 @@ function PostCard({ post }: { post: Post }) {
       className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 transition hover:shadow-md"
     >
       <div className="aspect-square w-full overflow-hidden bg-slate-100">
-        {post.thumbnailUrl && !thumbnailFailed ? (
+        {thumbnailSrc && !thumbnailFailed ? (
           <img
-            src={proxied(post.thumbnailUrl)}
+            src={thumbnailSrc}
             alt=""
             className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
             onError={() => setThumbnailFailed(true)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-slate-50">
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-300">
-              <ImageOff className="h-8 w-8" />
-            </div>
+            <ImageOff className="h-12 w-12 text-slate-300" />
           </div>
         )}
       </div>
@@ -629,8 +714,25 @@ export default function CreatorDetailClient(props: {
               src={photoSrc}
               alt={profile.name}
               onError={(event) => {
-                if (!event.currentTarget.src.endsWith(defaultProfilePhoto)) {
-                  event.currentTarget.src = defaultProfilePhoto;
+                const image = event.currentTarget;
+                const rawUrl = String(profile.photoUrl ?? "").trim();
+
+                /*
+                 * Untuk URL CDN lama: jika proxy gagal, coba URL asli
+                 * satu kali sebelum memakai avatar default.
+                 */
+                if (
+                  /^https?:\/\//i.test(rawUrl) &&
+                  image.dataset.directTried !== "true" &&
+                  image.src !== rawUrl
+                ) {
+                  image.dataset.directTried = "true";
+                  image.src = rawUrl;
+                  return;
+                }
+
+                if (!image.src.endsWith(defaultProfilePhoto)) {
+                  image.src = defaultProfilePhoto;
                 }
               }}
               className="-mt-10 h-20 w-20 rounded-2xl border-4 border-white object-cover"
@@ -860,7 +962,11 @@ Calculation follows the selected period.
             </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {topPosts.map((post) => (
-                <PostCard key={post.id} post={post} />
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  profilePhotoUrl={profile.photoUrl}
+                />
               ))}
               {topPosts.length === 0 ? (
                 <p className="col-span-full py-8 text-center italic text-slate-400">
