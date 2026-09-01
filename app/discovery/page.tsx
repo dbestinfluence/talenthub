@@ -3,7 +3,7 @@ import UsersPageClient from "@/components/discovery/DiscoveryPageClient"
 import { requireRole } from "@/lib/session"
 
 export default async function UsersPage() {
-  await requireRole(["ADMIN"])
+  await requireRole(["ADMIN", "EMPLOYEE"])
 
   return (
     <DefaultLayout>

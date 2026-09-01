@@ -37,7 +37,7 @@ model User {
   email       String    @unique
   password    String
   phoneNumber String?
-  role        Role      @default(ADMIN)
+  role        Role      @default(EMPLOYEE)
   Account     Account[]
   Session     Session[]
 }
@@ -216,6 +216,7 @@ model mst_apify_tokens {
   quota_exceeded_at DateTime?
   last_used_at      DateTime?
   created_at        DateTime  @default(now())
+  email             String?
 
   @@index([is_active, quota_exceeded_at])
 }
@@ -296,4 +297,5 @@ model stg_discovered_usernames {
 
 enum Role {
   ADMIN
+  EMPLOYEE
 }

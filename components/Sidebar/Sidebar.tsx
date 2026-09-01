@@ -122,6 +122,7 @@ const menuItems: MenuItem[] = [
   {
     label: "Creator\nDiscovery",
     href: "/discovery",
+    roles: ["ADMIN", "EMPLOYEE"],
     icon: (
       <svg
         viewBox="0 0 24 24"

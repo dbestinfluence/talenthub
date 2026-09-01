@@ -1,6 +1,7 @@
 "use client";
 
 import { Children, useEffect, useState, type ReactNode } from "react";
+import { useSession } from "next-auth/react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type Metric = { label: string; value: number };
@@ -41,12 +42,27 @@ const emptyDashboardData: DashboardData = {
 };
 
 export default function TalentDashboard() {
+  const { data: session, status: sessionStatus } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [period, setPeriod] = useState("this_month");
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
-  const [activeTab, setActiveTab] = useState<"financial" | "projects">("financial");
+  // Default ke Project Monitoring supaya data financial tidak sempat tampil
+  // sebelum session dan role selesai dimuat.
+  const [activeTab, setActiveTab] = useState<"financial" | "projects">("projects");
+
+  useEffect(() => {
+    if (sessionStatus === "loading") return;
+
+    // ADMIN membuka Financial Overview secara default.
+    // EMPLOYEE selalu diarahkan ke Project Monitoring.
+    setActiveTab(isAdmin ? "financial" : "projects");
+  }, [isAdmin, sessionStatus]);
+
+  // Pengaman tambahan: financial hanya boleh dirender jika role ADMIN.
+  const showingFinancial = isAdmin && activeTab === "financial";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,7 +104,7 @@ export default function TalentDashboard() {
     setPeriod(value);
   };
 
-  if (loading && !data) return <DashboardSkeleton />;
+  if (sessionStatus === "loading" || (loading && !data)) return <DashboardSkeleton />;
   if (!data) return null;
 
   const growth = data.overview.revenueGrowth;
@@ -104,12 +120,12 @@ export default function TalentDashboard() {
       {error ? <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"><span>Dashboard data is temporarily unavailable. Empty or previously loaded data is shown. {error}</span><button type="button" onClick={() => setRequestVersion((value) => value + 1)} className="shrink-0 rounded-lg bg-amber-900 px-4 py-2 text-xs font-semibold text-white">Try Again</button></div> : null}
 
       <div className="inline-flex w-full rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:w-auto" role="tablist" aria-label="Dashboard sections">
-        <button type="button" role="tab" aria-selected={activeTab === "financial"} onClick={() => setActiveTab("financial")} className={`flex-1 rounded-xl px-5 py-2.5 text-sm font-semibold sm:flex-none ${activeTab === "financial" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>Financial Overview</button>
+        {isAdmin ? <button type="button" role="tab" aria-selected={showingFinancial} onClick={() => setActiveTab("financial")} className={`flex-1 rounded-xl px-5 py-2.5 text-sm font-semibold sm:flex-none ${showingFinancial ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>Financial Overview</button> : null}
         <button type="button" role="tab" aria-selected={activeTab === "projects"} onClick={() => setActiveTab("projects")} className={`flex-1 rounded-xl px-5 py-2.5 text-sm font-semibold sm:flex-none ${activeTab === "projects" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>Project Monitoring</button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {activeTab === "financial" ? <>
+        {showingFinancial ? <>
           <SummaryCard title="Gross Income" value={currency(data.financial.grossIncome)} detail="Subtotal of Mark Price × Qty" tone="sky" />
           <SummaryCard title="Net Income After Tax" value={currency(data.financial.netIncome)} detail={`${currency(data.financial.taxDeduction)} total tax deduction`} tone="emerald" />
           <SummaryCard title="Recognized Revenue" value={currency(data.overview.revenue)} detail={growth === null ? "No prior-month revenue for comparison" : `${growth >= 0 ? "Up" : "Down"} ${Math.abs(growth).toLocaleString("en-US", { maximumFractionDigits: 1 })}% from the previous month`} tone={growth !== null && growth < 0 ? "rose" : "emerald"} />
@@ -126,12 +142,12 @@ export default function TalentDashboard() {
         <div className={activeTab === "projects" ? "block xl:col-span-2" : "hidden"}><ChartCard title="Project Pipeline" subtitle="Project distribution by workflow stage for the selected period">
           <ResponsiveContainer width="100%" height={280}><BarChart data={data.projectStatus} margin={{ left: 0, right: 12 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="label" tick={{ fontSize: 12 }} /><YAxis allowDecimals={false} tick={{ fontSize: 12 }} /><Tooltip formatter={(value) => [number(Number(value)), "Project"]} /><Bar dataKey="value" radius={[8, 8, 0, 0]}>{data.projectStatus.map((item, index) => <Cell key={item.label} fill={colors[index % colors.length]} />)}</Bar></BarChart></ResponsiveContainer>
         </ChartCard></div>
-        <div className={activeTab === "financial" ? "block xl:col-span-2" : "hidden"}><Card title="Financial Overview" subtitle="Financial values calculated from unique projects">
+        <div className={showingFinancial ? "block xl:col-span-2" : "hidden"}><Card title="Financial Overview" subtitle="Financial values calculated from unique projects">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><SmallMetric label="Gross Income" value={currency(data.financial.grossIncome)} /><SmallMetric label="Tax Deduction" value={currency(data.financial.taxDeduction)} /><SmallMetric label="Net Income" value={currency(data.financial.netIncome)} /><SmallMetric label="Average Completed Project Value" value={currency(data.financial.averageProjectValue)} /></div>
         </Card></div>
       </div>
 
-      <div className={activeTab === "financial" ? "block" : "hidden"}><ChartCard title="Revenue Performance" subtitle="Completed-project revenue across the trailing 12 months">
+      <div className={showingFinancial ? "block" : "hidden"}><ChartCard title="Revenue Performance" subtitle="Completed-project revenue across the trailing 12 months">
         <ResponsiveContainer width="100%" height={320}><AreaChart data={data.revenueTrend} margin={{ left: 8, right: 16 }}><defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.35} /><stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="label" tick={{ fontSize: 12 }} /><YAxis tickFormatter={compactCurrency} tick={{ fontSize: 11 }} width={75} /><Tooltip formatter={(value) => [currency(Number(value)), "Revenue"]} /><Area type="monotone" dataKey="value" stroke="#0284c7" strokeWidth={3} fill="url(#revenueFill)" /></AreaChart></ResponsiveContainer>
       </ChartCard></div>
 
@@ -150,7 +166,7 @@ export default function TalentDashboard() {
         <Card title="Upcoming Project Deadlines" subtitle="Active projects with deadlines in the next seven days">
           <RankList empty="No project deadlines fall within the next seven days.">{data.alerts.deadlines.map((item) => <div key={item.id} className={`rounded-xl border p-4 ${item.daysLeft <= 1 ? "border-rose-200 bg-rose-50" : item.daysLeft <= 3 ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{item.name}</p><p className="mt-1 text-xs font-medium text-slate-600">{item.brand} · {item.status}</p><p className="mt-3 text-xs text-slate-500">Deadline: <strong className="text-slate-700">{date(item.deadline)}</strong></p></div><span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${item.daysLeft <= 1 ? "bg-rose-100 text-rose-700" : item.daysLeft <= 3 ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"}`}>{item.daysLeft === 0 ? "Due Today" : `${item.daysLeft} day${item.daysLeft === 1 ? "" : "s"} remaining`}</span></div></div>)}</RankList>
         </Card></div>
-        <div className={activeTab === "financial" ? "block xl:col-span-2" : "hidden"}>
+        <div className={showingFinancial ? "block xl:col-span-2" : "hidden"}>
         <Card title="Highest-Value Clients" subtitle="Top brands ranked by completed-project revenue">
           <RankList empty="No completed-project revenue is available for this period.">{data.clientAnalytics.top.map((client, index) => <div key={`${client.label}-${index}`} className="flex items-center justify-between gap-4 rounded-xl border border-sky-100 bg-sky-50/60 p-4"><div className="flex min-w-0 items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-sm font-bold text-white">{index + 1}</span><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{client.label}</p><p className="mt-1 text-xs text-slate-500">Completed-project revenue</p></div></div><div className="shrink-0 text-right"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Revenue</p><p className="mt-1 text-sm font-bold text-slate-900 sm:text-base">{currency(client.value)}</p></div></div>)}</RankList>
           {data.clientAnalytics.top.length ? <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">Showing {data.clientAnalytics.top.length} highest-value brand{data.clientAnalytics.top.length === 1 ? "" : "s"} with completed projects in the selected period.</p> : null}
