@@ -162,7 +162,11 @@ if (id) {
     brandContact: project.mst_brand?.brd_notelp ?? "",
     brandEmail: project.mst_brand?.brd_email ?? "",
     brandAddress: project.mst_brand?.brd_alamat ?? "",
-    brandPic: project.mst_brand?.brd_pic1 ?? "",
+    brandPic:
+      project.mst_brand?.brd_pic1?.trim() ||
+      project.mst_brand?.brd_pic2?.trim() ||
+      project.mst_brand?.brd_pic3?.trim() ||
+      "",
 
     name: project.prj_nama,
 

@@ -440,7 +440,12 @@ export default function QuotationSection({
 
     doc.text("Donna Bella", signatureX + col1 / 2, nameY, { align: "center" });
 
-    doc.text("Hirajati Natawiria", signatureX + col1 + col2 / 2, nameY, { align: "center" });
+    doc.text(
+      String(projectDetail?.brandPic ?? "-").trim() || "-",
+      signatureX + col1 + col2 / 2,
+      nameY,
+      { align: "center", maxWidth: col2 - 4 }
+    );
     doc.text("Lilik Sujieanto", signatureX + col1 + col2 + col3 / 2, nameY, { align: "center" });
     doc.text("Director", signatureX + col1 + col2 + col3 / 2, nameY + 5, { align: "center" });
 
