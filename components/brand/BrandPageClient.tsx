@@ -11,8 +11,11 @@ type Brand = {
   brd_email: string | null;
   brd_notelp: string | null;
   brd_pic1: string | null;
+  brd_pic1_phone: string | null;
   brd_pic2: string | null;
+  brd_pic2_phone: string | null;
   brd_pic3: string | null;
+  brd_pic3_phone: string | null;
   brd_status: number | null;
 };
 
@@ -29,8 +32,11 @@ export default function BrandPageClient() {
   const [brdEmail, setBrdEmail] = useState("");
   const [brdNotelp, setBrdNotelp] = useState("");
   const [brdPic1, setBrdPic1] = useState("");
+  const [brdPic1Phone, setBrdPic1Phone] = useState("");
   const [brdPic2, setBrdPic2] = useState("");
+  const [brdPic2Phone, setBrdPic2Phone] = useState("");
   const [brdPic3, setBrdPic3] = useState("");
+  const [brdPic3Phone, setBrdPic3Phone] = useState("");
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,7 +95,7 @@ export default function BrandPageClient() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+          setError(err instanceof Error ? err.message : "An error occurred");
         }
       } finally {
         if (!cancelled) {
@@ -133,8 +139,11 @@ export default function BrandPageClient() {
             brd_email: brdEmail,
             brd_notelp: brdNotelp,
             brd_pic1: brdPic1,
+            brd_pic1_phone: brdPic1Phone,
             brd_pic2: brdPic2,
+            brd_pic2_phone: brdPic2Phone,
             brd_pic3: brdPic3,
+            brd_pic3_phone: brdPic3Phone,
           }),
         }
       );
@@ -155,7 +164,7 @@ export default function BrandPageClient() {
     } catch (err) {
       showToast(
         "error",
-        err instanceof Error ? err.message : "Terjadi kesalahan"
+        err instanceof Error ? err.message : "An error occurred"
       );
     } finally {
       setSaving(false);
@@ -188,7 +197,7 @@ export default function BrandPageClient() {
 
       showToast("success", "Brand deleted successfully");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Terjadi kesalahan";
+      const message = err instanceof Error ? err.message : "An error occurred";
 
       setError(message);
       showToast("error", message);
@@ -234,8 +243,11 @@ export default function BrandPageClient() {
     setBrdEmail(brand.brd_email ?? "");
     setBrdNotelp(brand.brd_notelp ?? "");
     setBrdPic1(brand.brd_pic1 ?? "");
+    setBrdPic1Phone(brand.brd_pic1_phone ?? "");
     setBrdPic2(brand.brd_pic2 ?? "");
+    setBrdPic2Phone(brand.brd_pic2_phone ?? "");
     setBrdPic3(brand.brd_pic3 ?? "");
+    setBrdPic3Phone(brand.brd_pic3_phone ?? "");
 
     setError("");
   }
@@ -249,8 +261,11 @@ export default function BrandPageClient() {
     setBrdEmail("");
     setBrdNotelp("");
     setBrdPic1("");
+    setBrdPic1Phone("");
     setBrdPic2("");
+    setBrdPic2Phone("");
     setBrdPic3("");
+    setBrdPic3Phone("");
 
     setError("");
   }
@@ -273,7 +288,7 @@ export default function BrandPageClient() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
           Brand Management
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Data Brand</h1>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">Brand Data</h1>
         <p className="mt-1 text-sm text-slate-600">
           Manage brand identities, contact information, and PIC details from one
           place.
@@ -286,9 +301,9 @@ export default function BrandPageClient() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">
-                  Form Data Brand
+                  Brand Form
                 </h2>
-                <p className="text-sm text-slate-500">Create or Update Data</p>
+                <p className="text-sm text-slate-500">Create or update a brand</p>
               </div>
             </div>
 
@@ -327,34 +342,24 @@ export default function BrandPageClient() {
             />
             <input
               type="tel"
-              placeholder="No Telp"
+              placeholder="Brand Phone Number"
               value={brdNotelp}
               onChange={(e) => setBrdNotelp(e.target.value)}
               className="h-10 w-full rounded-lg border border-slate-300 px-3"
             />
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              <input
-                type="text"
-                placeholder="PIC 1"
-                value={brdPic1}
-                onChange={(e) => setBrdPic1(e.target.value)}
-                className="h-10 w-full rounded-lg border border-slate-300 px-3"
-              />
-              <input
-                type="text"
-                placeholder="PIC 2"
-                value={brdPic2}
-                onChange={(e) => setBrdPic2(e.target.value)}
-                className="h-10 w-full rounded-lg border border-slate-300 px-3"
-              />
-              <input
-                type="text"
-                placeholder="PIC 3"
-                value={brdPic3}
-                onChange={(e) => setBrdPic3(e.target.value)}
-                className="h-10 w-full rounded-lg border border-slate-300 px-3"
-              />
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700">Brand Contacts</p>
+              {[
+                { label: "PIC 1", name: brdPic1, setName: setBrdPic1, phone: brdPic1Phone, setPhone: setBrdPic1Phone },
+                { label: "PIC 2", name: brdPic2, setName: setBrdPic2, phone: brdPic2Phone, setPhone: setBrdPic2Phone },
+                { label: "PIC 3", name: brdPic3, setName: setBrdPic3, phone: brdPic3Phone, setPhone: setBrdPic3Phone },
+              ].map((pic) => (
+                <div key={pic.label} className="grid gap-2 sm:grid-cols-2">
+                  <input type="text" placeholder={`${pic.label} Name`} value={pic.name} onChange={(e) => pic.setName(e.target.value)} className="h-10 w-full rounded-lg border border-slate-300 px-3" />
+                  <input type="tel" placeholder={`${pic.label} Phone Number`} value={pic.phone} onChange={(e) => pic.setPhone(e.target.value)} className="h-10 w-full rounded-lg border border-slate-300 px-3" />
+                </div>
+              ))}
             </div>
 
             {error && (
@@ -372,7 +377,7 @@ export default function BrandPageClient() {
                 className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:bg-slate-400"
               >
                 {saving
-                  ? "Menyimpan..."
+                  ? "Saving..."
                   : editingId
                   ? "Update Brand"
                   : "Add Brand"}
@@ -402,11 +407,11 @@ export default function BrandPageClient() {
 
           {loading ? (
             <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-              Load data brands...
+              Loading brands...
             </div>
           ) : brands.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-              No Have Any Data Brands.
+              No brands found.
             </div>
           ) : (
             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">

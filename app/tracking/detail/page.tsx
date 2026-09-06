@@ -840,7 +840,7 @@ case "Quotation":
           <div className="mt-8 grid gap-4 sm:mt-10 sm:grid-cols-2 xl:grid-cols-4">
             <FieldBox label="Brand Name" value={projectDetail?.brand} />
             <FieldBox label="Project Name" value={projectDetail?.name} />
-            <FieldBox label="PIC" value={projectDetail?.createdBy} />
+            <FieldBox label="Project PIC" value={projectDetail?.projectPic} />
             <FieldBox
               label="Date"
               value={

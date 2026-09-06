@@ -171,16 +171,20 @@ export default function QuotationSection({
       // KIRI
       doc.setFont("helvetica", "normal");
       doc.text("Brand", contentLeft, 57);
-      doc.text("Contact", contentLeft, 63);
-      doc.text("Project", contentLeft, 69);
+      doc.text("Contact Person", contentLeft, 63);
+      doc.text("Phone", contentLeft, 69);
+      doc.text("Project", contentLeft, 75);
       doc.text(`: ${String(projectDetail?.brand ?? "-").toUpperCase()}`, 44, 57);
-      doc.text(`: ${String(projectDetail?.brandContact ?? "-") || "-"}`, 44, 63);
-      doc.text(`: ${String(projectDetail?.name ?? "-")}`, 44, 69);
+      const quotationContactName = String(projectDetail?.quotationPic ?? "").trim();
+      const quotationContactPhone = String(projectDetail?.quotationPicPhone ?? "").trim();
+      doc.text(`: ${quotationContactName || "-"}`, 44, 63);
+      doc.text(`: ${quotationContactPhone || "-"}`, 44, 69);
+      doc.text(`: ${String(projectDetail?.name ?? "-")}`, 44, 75);
 
       // KANAN
-      const rightLabelX = 120;
-      const rightColonX = 140;
-      const rightValueX = 144;
+      const rightLabelX = 118;
+      const rightColonX = 146;
+      const rightValueX = 150;
       doc.text("Date", rightLabelX, 57);
       doc.text("Quotation No", rightLabelX, 63);
       doc.text("Transaction No", rightLabelX, 69);
@@ -200,7 +204,7 @@ export default function QuotationSection({
     // 5. TABEL CREATOR
     // =====================================================
     autoTable(doc, {
-      startY: 80,
+      startY: 84,
 
       head: [["Description", "SOW", "Platform", "Qty", "Rate Card", "Total"]],
 
@@ -441,7 +445,7 @@ export default function QuotationSection({
     doc.text("Donna Bella", signatureX + col1 / 2, nameY, { align: "center" });
 
     doc.text(
-      String(projectDetail?.brandPic ?? "-").trim() || "-",
+      String(projectDetail?.quotationPic ?? "-").trim() || "-",
       signatureX + col1 + col2 / 2,
       nameY,
       { align: "center", maxWidth: col2 - 4 }

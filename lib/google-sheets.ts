@@ -150,7 +150,7 @@ function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
   return [
     [`Project: ${project.prj_nama} (${project.prj_kode})`],
     [`Brand: ${project.mst_brand.brd_nama ?? '-'}`],
-    [`PIC: ${project.creaby} | Created: ${project.creadate.toLocaleDateString('en-GB')}`],
+    [`Project PIC: ${project.prj_project_pic ?? '-'} | Created: ${project.creadate.toLocaleDateString('en-GB')}`],
     header,
     ...project.dtl_project.map((detail, index) => {
       const creator = detail.mst_creators;

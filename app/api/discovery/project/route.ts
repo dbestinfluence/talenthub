@@ -14,12 +14,14 @@ export async function POST(request: Request) {
     const usernameLogin = session?.user?.name || session?.user?.email || "SYSTEM";
 
     const body = await request.json();
-    const { projectName, brandId, startDate, endDate, selectedCreators } = body;
+    const { projectName, brandId, projectPic, quotationPic, startDate, endDate, selectedCreators } = body;
 
     // 2. Validasi input dasar
     if (
       !projectName ||
       !brandId ||
+      !projectPic ||
+      !quotationPic ||
       !startDate ||
       !endDate ||
       !selectedCreators ||
@@ -53,6 +55,25 @@ export async function POST(request: Request) {
 
     // 4. Jalankan Prisma Transaction
     const result = await prisma.$transaction(async (tx) => {
+      const brand = await tx.mst_brand.findFirst({
+        where: { brd_id: parseInt(brandId), brd_status: 1 },
+        select: {
+          brd_pic1: true, brd_pic1_phone: true,
+          brd_pic2: true, brd_pic2_phone: true,
+          brd_pic3: true, brd_pic3_phone: true,
+        },
+      });
+      if (!brand) throw new Error("The selected brand is unavailable.");
+      const brandPics = [
+        { name: brand.brd_pic1?.trim(), phone: brand.brd_pic1_phone?.trim() },
+        { name: brand.brd_pic2?.trim(), phone: brand.brd_pic2_phone?.trim() },
+        { name: brand.brd_pic3?.trim(), phone: brand.brd_pic3_phone?.trim() },
+      ].filter((pic): pic is { name: string; phone: string | undefined } => Boolean(pic.name));
+      const selectedProjectPic = brandPics.find((pic) => pic.name === projectPic);
+      const selectedQuotationPic = brandPics.find((pic) => pic.name === quotationPic);
+      if (!selectedProjectPic || !selectedQuotationPic) {
+        throw new Error("Project PIC and Quotation PIC must be selected from the brand contacts.");
+      }
       const activeDbest = await tx.mst_dbest.findFirst({
         where: { bst_status: 1 },
         orderBy: { bst_id: "desc" },
@@ -70,6 +91,9 @@ export async function POST(request: Request) {
           prj_brand: parseInt(brandId),
           prj_dbestid: activeDbest.bst_id,
           prj_nama: projectName,
+          prj_project_pic: selectedProjectPic.name,
+          prj_quotation_pic: selectedQuotationPic.name,
+          prj_quotation_phone: selectedQuotationPic.phone ?? null,
           prj_dstartdate: parsedStartDate,
           prj_denddate: parsedEndDate,
           prj_status: 1,

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { brd_initial, brd_nama, brd_alamat, brd_email, brd_notelp, brd_pic1, brd_pic2, brd_pic3 } = body;
+    const { brd_initial, brd_nama, brd_alamat, brd_email, brd_notelp, brd_pic1, brd_pic1_phone, brd_pic2, brd_pic2_phone, brd_pic3, brd_pic3_phone } = body;
 
     if (!brd_nama) return NextResponse.json({ error: "Brand name is required" }, { status: 400 });
 
@@ -38,8 +38,11 @@ export async function POST(req: Request) {
         brd_email,
         brd_notelp,
         brd_pic1,
+        brd_pic1_phone,
         brd_pic2,
+        brd_pic2_phone,
         brd_pic3,
+        brd_pic3_phone,
         brd_status: 1,
         creaby: session.user.name || "admin",
       },

@@ -60,8 +60,11 @@ model mst_brand {
   brd_email   String?       @db.VarChar(100)
   brd_notelp  String?       @db.VarChar(15)
   brd_pic1    String?       @db.VarChar(100)
+  brd_pic1_phone String?     @db.VarChar(30)
   brd_pic2    String?       @db.VarChar(100)
+  brd_pic2_phone String?     @db.VarChar(30)
   brd_pic3    String?       @db.VarChar(100)
+  brd_pic3_phone String?     @db.VarChar(30)
   brd_status  Int?          @default(1)
   creaby      String?       @db.VarChar(20)
   creadate    DateTime?     @default(now()) @db.Timestamp(6)
@@ -202,6 +205,9 @@ model trs_project {
   prj_tax_rate         Decimal       @default(11.00) @db.Decimal(5, 2)
   prj_invoice_tax_rate Decimal?      @db.Decimal(5, 2)
   prj_dbestid          Int?
+  prj_project_pic      String?       @db.VarChar(100)
+  prj_quotation_pic    String?       @db.VarChar(100)
+  prj_quotation_phone  String?       @db.VarChar(30)
   dtl_project          dtl_project[]
   mst_brand            mst_brand     @relation(fields: [prj_brand], references: [brd_id], map: "fk_trs_project_brand")
   mst_dbest            mst_dbest?    @relation(fields: [prj_dbestid], references: [bst_id], onUpdate: NoAction, map: "fk_trs_project_dbest")

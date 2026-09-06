@@ -150,7 +150,7 @@ export default function CreatorDiscoveryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage, setEntriesPerPage] = useState(10);
 
-   const [brandsOptions, setBrandsOptions] = useState<{ id: string; name: string }[]>([]);
+   const [brandsOptions, setBrandsOptions] = useState<{ id: string; name: string; pics: { name: string; phone: string | null }[] }[]>([]);
 
   const [isFiltered, setIsFiltered] = useState(true);
 
@@ -168,6 +168,8 @@ export default function CreatorDiscoveryPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [selectedBrand, setSelectedBrand] = useState("");
+  const [selectedProjectPic, setSelectedProjectPic] = useState("");
+  const [selectedQuotationPic, setSelectedQuotationPic] = useState("");
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -534,6 +536,8 @@ export default function CreatorDiscoveryPage() {
     setIsModalOpen(false);
     setProjectName("");
     setSelectedBrand("");
+    setSelectedProjectPic("");
+    setSelectedQuotationPic("");
     setStartDate("");
     setEndDate("");
     setIsBrandDropdownOpen(false);
@@ -542,7 +546,7 @@ export default function CreatorDiscoveryPage() {
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!projectName || !selectedBrand || !startDate || !endDate) {
+    if (!projectName || !selectedBrand || !selectedProjectPic || !selectedQuotationPic || !startDate || !endDate) {
       showAlertValidationError("Please fill all project details!");
       return;
     }
@@ -563,6 +567,8 @@ export default function CreatorDiscoveryPage() {
         body: JSON.stringify({
           projectName: projectName,
           brandId: selectedBrand,
+          projectPic: selectedProjectPic,
+          quotationPic: selectedQuotationPic,
           startDate: startDate,
           endDate: endDate,
           selectedCreators: selectedCreatorsData,
@@ -583,6 +589,8 @@ export default function CreatorDiscoveryPage() {
       setIsModalOpen(false);
       setProjectName("");
       setSelectedBrand("");
+      setSelectedProjectPic("");
+      setSelectedQuotationPic("");
       setStartDate("");
       setEndDate("");
       setSelectedRows([]);
@@ -1407,11 +1415,13 @@ export default function CreatorDiscoveryPage() {
                 {isBrandDropdownOpen && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg show-lg max-h-40 overflow-y-auto">
                     {brandsOptions.map(
-                      (brand: { id: string; name: string }) => (
+                      (brand) => (
                         <div
                           key={brand.id}
                           onClick={() => {
                             setSelectedBrand(brand.id);
+                            setSelectedProjectPic("");
+                            setSelectedQuotationPic("");
                             setIsBrandDropdownOpen(false);
                           }}
                           className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
@@ -1431,6 +1441,43 @@ export default function CreatorDiscoveryPage() {
                     )}
                   </div>
                 )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Project PIC <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={selectedProjectPic}
+                    onChange={(e) => setSelectedProjectPic(e.target.value)}
+                    disabled={!selectedBrand}
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    <option value="">Select Project PIC</option>
+                    {(brandsOptions.find((brand) => brand.id === selectedBrand)?.pics ?? []).map((pic) => (
+                      <option key={pic.name} value={pic.name}>{pic.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Quotation PIC <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={selectedQuotationPic}
+                    onChange={(e) => setSelectedQuotationPic(e.target.value)}
+                    disabled={!selectedBrand}
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    <option value="">Select Quotation PIC</option>
+                    {(brandsOptions.find((brand) => brand.id === selectedBrand)?.pics ?? []).map((pic) => (
+                      <option key={pic.name} value={pic.name}>{pic.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>

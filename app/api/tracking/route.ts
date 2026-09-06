@@ -167,6 +167,9 @@ if (id) {
       project.mst_brand?.brd_pic2?.trim() ||
       project.mst_brand?.brd_pic3?.trim() ||
       "",
+    projectPic: project.prj_project_pic ?? "",
+    quotationPic: project.prj_quotation_pic ?? "",
+    quotationPicPhone: project.prj_quotation_phone ?? "",
 
     name: project.prj_nama,
 
