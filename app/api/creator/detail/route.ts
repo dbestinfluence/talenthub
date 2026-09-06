@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // Ambil SEMUA post. Pembatasan Top 5 dilakukan khusus di frontend.
+    // Ambil post. Pembatasan Top 5 dilakukan khusus di frontend.
     const posts = await prisma.dtl_creator_posts.findMany({
       where: { creator_id: id },
       orderBy: { posted_at: "desc" },
