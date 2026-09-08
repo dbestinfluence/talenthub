@@ -1,9 +1,6 @@
 import type { SocialPlatform } from "./social-platform";
 import { contentIdentityMatches, getContentIdentity } from "./content-url";
-import {
-  assertRunSucceeded,
-  withApifyClient,
-} from "./apify-token-pool";
+import { assertRunSucceeded, withApifyClient } from "./apify-token-pool";
 
 export interface RawPost {
   caption: string;
@@ -158,11 +155,7 @@ async function enrichPosts(
     expectedUsername?: string;
   } = {}
 ): Promise<RawPost[]> {
-  const {
-    concurrency = 1,
-    dropFailed = false,
-    expectedUsername,
-  } = options;
+  const { concurrency = 1, dropFailed = false, expectedUsername } = options;
   const results: Array<{
     post: RawPost;
     enriched: boolean;
@@ -185,8 +178,7 @@ async function enrichPosts(
   await Promise.all(Array.from({ length: workerCount }, worker));
 
   const completedResults = results.filter(
-    (result): result is { post: RawPost; enriched: boolean } =>
-      result !== null
+    (result): result is { post: RawPost; enriched: boolean } => result !== null
   );
   const successCount = completedResults.filter(
     (result) => result.enriched
@@ -221,10 +213,7 @@ export async function fetchInstagramBulkPosts(
   sinceDate?: Date,
   limit = 14
 ): Promise<RawPost[]> {
-  const normalizedUsername = username
-    .trim()
-    .replace(/^@+/, "")
-    .toLowerCase();
+  const normalizedUsername = username.trim().replace(/^@+/, "").toLowerCase();
 
   return withApifyClient(async (client) => {
     const input: Record<string, any> = {
@@ -232,7 +221,8 @@ export async function fetchInstagramBulkPosts(
       resultsType: "posts",
       resultsLimit: limit,
     };
-    if (sinceDate) input.onlyPostsNewerThan = sinceDate.toISOString().slice(0, 10);
+    if (sinceDate)
+      input.onlyPostsNewerThan = sinceDate.toISOString().slice(0, 10);
 
     const run = await client.actor("apify/instagram-scraper").call(input);
     assertRunSucceeded(run);
@@ -261,14 +251,18 @@ export async function fetchInstagramBulkPosts(
         const postUrl = String(
           p.url ??
             p.postUrl ??
-            (p.shortCode
-              ? `https://www.instagram.com/p/${p.shortCode}/`
-              : "")
+            (p.shortCode ? `https://www.instagram.com/p/${p.shortCode}/` : "")
         ).trim();
         const postedAt = p.timestamp ?? p.takenAtIso ?? p.takenAt ?? "";
 
-        if (!postUrl || !postedAt || Number.isNaN(new Date(postedAt).getTime())) {
-          console.warn(`  [BULK] Post invalid dibuang: ${postUrl || "tanpa URL"}`);
+        if (
+          !postUrl ||
+          !postedAt ||
+          Number.isNaN(new Date(postedAt).getTime())
+        ) {
+          console.warn(
+            `  [BULK] Post invalid dibuang: ${postUrl || "tanpa URL"}`
+          );
           return null;
         }
 
@@ -281,9 +275,7 @@ export async function fetchInstagramBulkPosts(
           views: normalizeCount(p.videoViewCount ?? p.viewsCount ?? p.views),
           shares: normalizeCount(p.shareCount ?? p.sharesCount ?? p.shares),
           saves: normalizeCount(p.saveCount ?? p.savesCount ?? p.saves),
-          reposts: normalizeCount(
-            p.repostCount ?? p.repostsCount ?? p.reposts
-          ),
+          reposts: normalizeCount(p.repostCount ?? p.repostsCount ?? p.reposts),
           postedAt: new Date(postedAt).toISOString(),
           postUrl,
           thumbnailUrl: p.displayUrl ?? p.display_url,
@@ -304,7 +296,6 @@ export async function fetchInstagramBulkPosts(
       .slice(0, limit);
   });
 }
-
 
 // ============================================================================
 // INSTAGRAM — PROFIL SAJA (murah, TIDAK ikut narik postingan)
@@ -383,9 +374,7 @@ export async function scrapeInstagramPosts(
     return (items as any[]).slice(0, limit).map((p: any) => ({
       caption: p.caption ?? "",
       likes: normalizeCount(p.likesCount ?? p.likeCount ?? p.likes),
-      comments: normalizeCount(
-        p.commentsCount ?? p.commentCount ?? p.comments
-      ),
+      comments: normalizeCount(p.commentsCount ?? p.commentCount ?? p.comments),
       views: normalizeCount(p.videoViewCount ?? p.viewsCount ?? p.views),
       shares: normalizeCount(p.shareCount ?? p.sharesCount ?? p.shares),
       saves: normalizeCount(p.saveCount ?? p.savesCount ?? p.saves),
@@ -598,6 +587,18 @@ function imageUrls(...values: unknown[]): string[] {
   return [...new Set(result)];
 }
 
+function isApifyUrl(value?: string): boolean {
+  if (!value) return false;
+
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+
+    return hostname === "api.apify.com" || hostname.endsWith(".apify.com");
+  } catch {
+    return false;
+  }
+}
+
 function returnedContentUrl(
   item: Record<string, unknown>,
   platform: SocialPlatform
@@ -693,7 +694,7 @@ export async function scrapeContentUrl(
             postURLs: [contentUrl],
             scrapeRelatedVideos: false,
             resultsPerPage: 1,
-            shouldDownloadCovers: true,
+            shouldDownloadCovers: false,
           })
         : platform === "youtube"
         ? await client.actor("streamers/youtube-scraper").call({
@@ -839,9 +840,7 @@ export async function scrapeContentUrl(
         item.covers,
         item.cover,
         item.originCover,
-        item.dynamicCover,
-        item.downloadedCovers,
-        item.downloadedCover
+        item.dynamicCover
       );
       return {
         contentUrl,
