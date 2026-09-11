@@ -23,14 +23,26 @@ async function persistThumbnail(urls: string[], platform: string, contentUrl: st
     instagram: 'https://www.instagram.com/', tiktok: 'https://www.tiktok.com/',
     youtube: 'https://www.youtube.com/', twitter: 'https://x.com/',
   };
-  const candidates = [...new Set(urls.filter((url) => /^https?:\/\//i.test(url)))];
+  const identity = getContentIdentity(contentUrl, platform);
+  const stableCandidates = identity.platform === 'instagram' && identity.contentId
+    ? [
+        `https://www.instagram.com/p/${identity.contentId}/media/?size=l`,
+        `https://www.instagram.com/p/${identity.contentId}/media/?size=m`,
+      ]
+    : [];
+  const candidates = [...new Set([...stableCandidates, ...urls]
+    .map((url) => url.replace(/&amp;/g, '&'))
+    .filter((url) => /^https?:\/\//i.test(url)))];
   for (const url of candidates) try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-        Accept: 'image/*,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
         Referer: referers[platform] ?? new URL(contentUrl).origin,
       },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15_000),
       cache: 'no-store',
     });
     if (!response.ok) continue;
@@ -54,7 +66,14 @@ async function persistThumbnail(urls: string[], platform: string, contentUrl: st
     }
   } catch { /* keep the original CDN URL as final fallback */ }
 
-  return candidates[0] ?? null;
+  // Some social CDNs reject server-side downloads but still allow the user's
+  // browser to display the freshly signed URL. Keep that fresh URL so the UI
+  // can try it directly; a later scrape will refresh it after it expires.
+  return urls
+    .map((url) => url.replace(/&amp;/g, '&'))
+    .find((url) => /^https?:\/\//i.test(url))
+    ?? stableCandidates[0]
+    ?? null;
 }
 
 function parseIds(values: string[]): number[] {
@@ -93,6 +112,35 @@ function displayUsername(value: string | null | undefined) {
   return username ? `@${username}` : 'Creator';
 }
 
+type ManualReport = {
+  likes: unknown; views: unknown; comments: unknown; saves: unknown;
+  shares: unknown; reposts: unknown; plays: unknown; duration: unknown;
+  caption?: unknown;
+  thumbnailDataUrl?: unknown;
+};
+
+function parseManualReport(value: unknown) {
+  if (!value || typeof value !== 'object') return null;
+  const input = value as ManualReport;
+  const integerFields = ['likes', 'views', 'comments', 'saves', 'shares', 'reposts', 'plays'] as const;
+  const metrics = Object.fromEntries(integerFields.map((field) => [field, Number(input[field])])) as
+    Record<(typeof integerFields)[number], number>;
+  const duration = Number(input.duration);
+  const thumbnailDataUrl = typeof input.thumbnailDataUrl === 'string' ? input.thumbnailDataUrl : '';
+  const validThumbnail = !thumbnailDataUrl || (
+    /^data:image\/(jpeg|png|webp|avif);base64,[a-z0-9+/=]+$/i.test(thumbnailDataUrl)
+    && thumbnailDataUrl.length <= 4_100_000
+  );
+  if (Object.values(metrics).some((metric) => !Number.isInteger(metric) || metric < 0)
+    || !Number.isFinite(duration) || duration < 0 || !validThumbnail) return null;
+  return {
+    ...metrics,
+    duration,
+    caption: String(input.caption ?? '').trim(),
+    thumbnailDataUrl: thumbnailDataUrl || null,
+  };
+}
+
 export async function GET(request: Request) {
   if (!(await authorized())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const params = new URL(request.url).searchParams;
@@ -114,7 +162,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     project: {
       id: project.prj_id, code: project.prj_kode, brand: project.mst_brand.brd_nama,
-      name: project.prj_nama, pic: project.creaby, date: project.prj_renddate,
+      name: project.prj_nama, pic: project.prj_project_pic ?? '', date: project.prj_renddate,
       dbest: project.mst_dbest ? { name: project.mst_dbest.bst_nama ?? '', address: project.mst_dbest.bst_alamat ?? '' } : null,
     },
     items: rows.map(serialize),
@@ -123,7 +171,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (!(await authorized())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const body = await request.json().catch(() => null) as { projectId?: unknown; detailIds?: unknown } | null;
+  const body = await request.json().catch(() => null) as {
+    projectId?: unknown;
+    detailIds?: unknown;
+    mode?: unknown;
+    manualReport?: unknown;
+    manualReports?: unknown;
+  } | null;
   const projectId = Number(body?.projectId);
   const detailIds = Array.isArray(body?.detailIds)
     ? parseIds(body.detailIds.map(String))
@@ -133,6 +187,73 @@ export async function POST(request: Request) {
   }
 
   const rows = await getRows(projectId, detailIds);
+  if (rows.length !== detailIds.length) {
+    return NextResponse.json({ error: 'One or more selected creators were not found in this project' }, { status: 404 });
+  }
+
+  if (body?.mode === 'manual') {
+    const suppliedReports = Array.isArray(body.manualReports)
+      ? body.manualReports as Array<{ detailId?: unknown; report?: unknown }>
+      : [{ detailId: detailIds[0], report: body.manualReport }];
+    const reportsById = new Map(
+      suppliedReports.map((item) => [Number(item.detailId), item.report]),
+    );
+    const prepared = rows.map((row) => ({
+      row,
+      metric: parseManualReport(reportsById.get(row.drf_id)),
+    }));
+
+    if (reportsById.size !== detailIds.length || prepared.some((item) => !item.metric)) {
+      return NextResponse.json({ error: 'Manual report data is incomplete or invalid' }, { status: 400 });
+    }
+    if (prepared.some(({ row }) => !row.drf_link_content?.trim())) {
+      return NextResponse.json({ error: 'Link Content is required for every selected creator' }, { status: 400 });
+    }
+
+    const results = await Promise.all(prepared.map(async ({ row, metric }) => {
+      const validMetric = metric!;
+      const contentUrl = row.drf_link_content!.trim();
+      const interactions = validMetric.likes + validMetric.comments + validMetric.saves
+        + validMetric.reposts + validMetric.shares;
+      const performance = validMetric.views > 0 ? (interactions / validMetric.views) * 100 : 0;
+      const { caption, thumbnailDataUrl, ...manualMetrics } = validMetric;
+      const thumbnail = thumbnailDataUrl
+        ?? row.detail_report?.thumbnail_url
+        ?? await persistThumbnail([], row.mst_creators.social_media.toLowerCase(), contentUrl);
+      await prisma.detail_report.upsert({
+        where: { dtl_project_id: row.drf_id },
+        update: {
+          content_url: contentUrl,
+          platform: row.mst_creators.social_media,
+          caption: caption || null,
+          thumbnail_url: thumbnail ?? row.detail_report?.thumbnail_url ?? null,
+          ...manualMetrics,
+          performance,
+          scraped_at: new Date(),
+        },
+        create: {
+          dtl_project_id: row.drf_id,
+          content_url: contentUrl,
+          platform: row.mst_creators.social_media,
+          caption: caption || null,
+          thumbnail_url: thumbnail,
+          ...manualMetrics,
+          performance,
+        },
+      });
+      return {
+        detailId: row.drf_id,
+        creator: displayUsername(row.mst_creators.username),
+        success: true,
+      };
+    }));
+    const refreshed = await getRows(projectId, detailIds);
+    return NextResponse.json({
+      items: refreshed.map(serialize),
+      results,
+    });
+  }
+
   const results = await Promise.all(rows.map(async (row) => {
     const resultContext = {
       detailId: row.drf_id,

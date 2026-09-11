@@ -65,6 +65,139 @@ export const confirmGenerateReport = async () => {
   });
 };
 
+export type ManualReportInput = {
+  likes: number;
+  views: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  reposts: number;
+  plays: number;
+  duration: number;
+  caption: string;
+  thumbnailDataUrl?: string;
+};
+
+export const chooseReportInputMode = async (action: "input" | "update" = "input") => {
+  const result = await Swal.fire({
+    title: "Report Data Source",
+    text: "Choose how the content performance data will be entered.",
+    icon: "question",
+    showCancelButton: true,
+    showDenyButton: true,
+    confirmButtonText: "Scrape from Link",
+    denyButtonText: action === "update" ? "Update Manually" : "Input Manually",
+    cancelButtonText: "Cancel",
+    confirmButtonColor: "#0284c7",
+    denyButtonColor: "#0f172a",
+  });
+
+  if (result.isConfirmed) return "scrape" as const;
+  if (result.isDenied) return "manual" as const;
+  return null;
+};
+
+export const showManualReportModal = async (
+  creatorName: string,
+  initial: Partial<ManualReportInput> = {},
+) => {
+  const escapeHtml = (value: string) =>
+    value.replace(/[&<>'"]/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;",
+    })[character] ?? character);
+
+  const fields = [
+    ["likes", "Likes *", "1"],
+    ["views", "Views *", "1"],
+    ["comments", "Comments", "1"],
+    ["saves", "Saves", "1"],
+    ["shares", "Shares", "1"],
+    ["reposts", "Reposts", "1"],
+    ["plays", "Plays", "1"],
+    ["duration", "AVG Duration (seconds)", "0.1"],
+  ];
+
+  const result = await Swal.fire<ManualReportInput>({
+    title: `Manual Report - ${escapeHtml(creatorName)}`,
+    width: 720,
+    html: `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left">
+        ${fields.map(([id, label, step]) => `
+          <label style="font-size:13px;font-weight:600;color:#334155">${label}
+            <input id="manual_${id}" type="number" min="0" step="${step}" value="${Number(initial[id as keyof ManualReportInput] ?? 0)}"
+              style="display:block;width:100%;height:44px;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;box-sizing:border-box" />
+          </label>`).join("")}
+      </div>
+      <label style="display:block;margin-top:14px;text-align:left;font-size:13px;font-weight:600;color:#334155">Caption (optional)
+        <textarea id="manual_caption" rows="3"
+          style="display:block;width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;box-sizing:border-box">${escapeHtml(initial.caption ?? "")}</textarea>
+      </label>
+      <label style="display:block;margin-top:14px;text-align:left;font-size:13px;font-weight:600;color:#334155">Thumbnail (optional)
+        <input id="manual_thumbnail" type="file" accept="image/jpeg,image/png,image/webp,image/avif"
+          style="display:block;width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;box-sizing:border-box" />
+        <small style="display:block;margin-top:5px;color:#64748b;font-weight:400">JPG, PNG, WEBP, atau AVIF. Maksimal 3 MB.</small>
+      </label>`,
+    showCancelButton: true,
+    confirmButtonText: "Save Manual Data",
+    cancelButtonText: "Cancel",
+    confirmButtonColor: "#0f172a",
+    focusConfirm: false,
+    preConfirm: async () => {
+      const readNumber = (id: string) =>
+        Number((document.getElementById(`manual_${id}`) as HTMLInputElement)?.value);
+      const values = Object.fromEntries(fields.map(([id]) => [id, readNumber(id)])) as
+        unknown as Omit<ManualReportInput, "caption" | "thumbnailDataUrl">;
+
+      if (Object.values(values).some((value) => !Number.isFinite(value) || value < 0)) {
+        Swal.showValidationMessage("All metrics must be numbers equal to or greater than 0.");
+        return false;
+      }
+      if (![values.likes, values.views, values.comments, values.saves, values.shares, values.reposts, values.plays]
+        .every(Number.isInteger)) {
+        Swal.showValidationMessage("Like, view, and interaction counts must be whole numbers.");
+        return false;
+      }
+
+      const thumbnailInput = document.getElementById("manual_thumbnail") as HTMLInputElement;
+      const thumbnail = thumbnailInput?.files?.[0];
+      let thumbnailDataUrl: string | undefined;
+      if (thumbnail) {
+        const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+        if (!allowedTypes.has(thumbnail.type)) {
+          Swal.showValidationMessage("Thumbnail harus berupa JPG, PNG, WEBP, atau AVIF.");
+          return false;
+        }
+        if (thumbnail.size > 3_000_000) {
+          Swal.showValidationMessage("Ukuran thumbnail maksimal 3 MB.");
+          return false;
+        }
+        thumbnailDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("Thumbnail gagal dibaca."));
+          reader.readAsDataURL(thumbnail);
+        }).catch(() => "");
+        if (!thumbnailDataUrl) {
+          Swal.showValidationMessage("Thumbnail gagal dibaca.");
+          return false;
+        }
+      }
+
+      return {
+        ...values,
+        caption: (document.getElementById("manual_caption") as HTMLTextAreaElement)?.value.trim() ?? "",
+        thumbnailDataUrl,
+      };
+    },
+  });
+
+  return result.isConfirmed ? result.value ?? null : null;
+};
+
 type PaymentOption = {
   pyt_id: number;
   pyt_bank: string | null;
@@ -405,7 +538,6 @@ export const showRunningContentModal = async (
     planning_upload: string;
     actual_upload: string;
     link_content: string;
-    start_project_date: string;
   },
   mode: "edit" | "view"
 ) => {
@@ -489,7 +621,6 @@ export const showRunningContentModal = async (
               id="planning_upload"
               type="date"
               value="${data.planning_upload}"
-              min="${data.start_project_date}"
               ${isView ? "readonly" : ""}
               style="
                 width:100%;
@@ -510,7 +641,6 @@ export const showRunningContentModal = async (
               id="actual_upload"
               type="date"
               value="${data.actual_upload}"
-              min="${data.start_project_date}"
               ${isView ? "readonly" : ""}
               style="
                 width:100%;
@@ -590,20 +720,6 @@ export const showRunningContentModal = async (
             const link_content =
               (document.getElementById("link_content") as HTMLInputElement)
                 ?.value || "";
-
-            if (planning_upload && planning_upload < data.start_project_date) {
-              Swal.showValidationMessage(
-                `Planning Upload cannot be earlier than Start Project (${data.start_project_date}).`
-              );
-              return;
-            }
-
-            if (actual_upload && actual_upload < data.start_project_date) {
-              Swal.showValidationMessage(
-                `Actual Upload cannot be earlier than Start Project (${data.start_project_date}).`
-              );
-              return;
-            }
 
             resolve({
               planning_upload,

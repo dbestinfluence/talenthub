@@ -74,11 +74,13 @@ function DraftPriceInput({
   value,
   label,
   invalid,
+  currency = false,
   onCommit,
 }: {
   value: number | null | undefined;
   label: string;
   invalid: boolean;
+  currency?: boolean;
   onCommit: (value: number | null) => void;
 }) {
   const [inputValue, setInputValue] = useState(
@@ -96,7 +98,11 @@ function DraftPriceInput({
         inputMode="numeric"
         required
         aria-label={label}
-        value={inputValue}
+        value={
+          inputValue
+            ? `${currency ? "Rp " : ""}${Number(inputValue).toLocaleString("en-US")}`
+            : ""
+        }
         placeholder="Required"
         onChange={(event) =>
           setInputValue(event.target.value.replace(/\D/g, ""))
@@ -468,6 +474,7 @@ export default function CreatorTable({
                 <DraftPriceInput
                   value={creator.rateCard}
                   label={`Rate Card for ${creator.name || "creator"}`}
+                  currency
                   invalid={Boolean(
                     invalidPricingFields[creator.drf_id]?.rateCard
                   )}
@@ -486,6 +493,7 @@ export default function CreatorTable({
                 <DraftPriceInput
                   value={creator.markupPrice}
                   label={`Mark Price for ${creator.name || "creator"}`}
+                  currency
                   invalid={Boolean(
                     invalidPricingFields[creator.drf_id]?.markupPrice
                   )}

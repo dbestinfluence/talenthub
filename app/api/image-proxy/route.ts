@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     "byteimg.com",
     "muscdn.com",
     "akamaized.net",
+    "public.blob.vercel-storage.com",
   ];
   let hostname: string;
   try {
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
         "Cache-Control": "public, max-age=86400",
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.redirect(new URL("/image/default-kol-avatar.png", request.url));
   }
 }

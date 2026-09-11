@@ -4,7 +4,12 @@ import CreatorTable from "./CreatorTable";
 import ReportIcon from "@/components/icons/ReportIcon";
 import FileDocumentIcon from "@/components/icons/FileDocumentIcon";
 import { exportDetailReportPdf, type DetailReportPayload } from "@/lib/detail-report-pdf";
-import { showAlertValidationError } from "@/lib/alert";
+import {
+  chooseReportInputMode,
+  showAlertValidationError,
+  showManualReportModal,
+  type ManualReportInput,
+} from "@/lib/alert";
 
 type Props = {
   projectDetail: ({ id?: number } & Record<string, unknown>) | null;
@@ -32,11 +37,48 @@ export default function ReportSection({
     if (!projectDetail?.id || detailIds.length === 0 || openingReportIds.length > 0) return;
 
     try {
-      setOpeningReportIds(detailIds);
+      const missingDetailIds = detailIds.filter((detailId) => {
+        const creator = creators.find((item) => Number(item.drf_id) === detailId);
+        return creator?.hasReport !== true;
+      });
+
+      const openDetailPage = () => {
+        const query = new URLSearchParams({ projectId: String(projectDetail.id) });
+        detailIds.forEach((id) => query.append("detailIds", String(id)));
+        router.push(`/tracking/report/detail-report?${query.toString()}`);
+      };
+
+      if (missingDetailIds.length === 0) {
+        openDetailPage();
+        return;
+      }
+
+      const mode = await chooseReportInputMode();
+      if (!mode) return;
+
+      setOpeningReportIds(missingDetailIds);
+      let manualReport = null;
+      const manualReports: Array<{ detailId: number; report: ManualReportInput }> = [];
+      if (mode === "manual") {
+        for (const [index, detailId] of missingDetailIds.entries()) {
+          const selectedCreator = creators.find((creator) => Number(creator.drf_id) === detailId);
+          const creatorName = String(selectedCreator?.name ?? `Creator #${detailId}`);
+          const report = await showManualReportModal(
+            missingDetailIds.length > 1 ? `${creatorName} (${index + 1}/${missingDetailIds.length})` : creatorName,
+          );
+          if (!report) {
+            setOpeningReportIds([]);
+            return;
+          }
+          manualReports.push({ detailId, report });
+        }
+        manualReport = manualReports[0]?.report ?? null;
+      }
+
       const response = await fetch("/api/tracking/detail-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: projectDetail.id, detailIds }),
+        body: JSON.stringify({ projectId: projectDetail.id, detailIds: missingDetailIds, mode, manualReport, manualReports }),
       });
       const payload = await response.json().catch(() => ({})) as {
         error?: string;
@@ -46,13 +88,11 @@ export default function ReportSection({
       if (!response.ok && response.status !== 207) {
         throw new Error(payload.error ?? "Failed to update report data.");
       }
-      if (failures.length === detailIds.length) {
+      if (failures.length === missingDetailIds.length) {
         throw new Error(failures.map((failure) => `${failure.creator ?? "Creator"}: ${failure.error}`).join("\n"));
       }
 
-      const query = new URLSearchParams({ projectId: String(projectDetail.id) });
-      detailIds.forEach((id) => query.append("detailIds", String(id)));
-      router.push(`/tracking/report/detail-report?${query.toString()}`);
+      openDetailPage();
     } catch (error) {
       await showAlertValidationError(error instanceof Error ? error.message : "Failed to update report data.");
       setOpeningReportIds([]);

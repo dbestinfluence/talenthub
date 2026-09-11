@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { normalizePlatform, SOCIAL_PLATFORMS } from '@/lib/social-platform';
+import {
+  chooseReportInputMode,
+  showManualReportModal,
+  type ManualReportInput,
+} from '@/lib/alert';
 
 type Report = {
   caption: string | null; thumbnail_url: string | null; likes: number; comments: number;
@@ -33,6 +38,7 @@ export default function DetailReportClient() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
+  const [updatingManual, setUpdatingManual] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
   const queryString = useMemo(() => {
@@ -61,6 +67,60 @@ export default function DetailReportClient() {
     } finally { setScraping(false); }
   }, [projectId]);
 
+  const updateManual = useCallback(async (items: Item[]) => {
+    if (!projectId || updatingManual || items.length === 0) return;
+    const manualReports: Array<{ detailId: number; report: ManualReportInput }> = [];
+    for (const [index, item] of items.entries()) {
+      const current = item.report;
+      const input = await showManualReportModal(
+        items.length > 1 ? `${item.creatorName} (${index + 1}/${items.length})` : item.creatorName,
+        current ? {
+          likes: current.likes,
+          views: current.views,
+          comments: current.comments,
+          saves: current.saves,
+          shares: current.shares,
+          reposts: current.reposts,
+          plays: current.plays,
+          duration: current.duration,
+          caption: current.caption ?? '',
+        } : {},
+      );
+      if (!input) return;
+      manualReports.push({ detailId: item.detailId, report: input satisfies ManualReportInput });
+    }
+
+    setUpdatingManual(true);
+    setErrors([]);
+    try {
+      const response = await fetch('/api/tracking/detail-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          detailIds: items.map((item) => item.detailId),
+          mode: 'manual',
+          manualReports,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'Failed to update manual report');
+      const refreshed = (result.items ?? []) as Item[];
+      if (refreshed.length > 0) {
+        const refreshedById = new Map(refreshed.map((item) => [item.detailId, item]));
+        setData((currentData) => currentData ? {
+          ...currentData,
+          items: currentData.items.map((currentItem) =>
+            refreshedById.get(currentItem.detailId) ?? currentItem),
+        } : currentData);
+      }
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : 'Failed to update manual report']);
+    } finally {
+      setUpdatingManual(false);
+    }
+  }, [projectId, updatingManual]);
+
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
     fetch(`/api/tracking/detail-report?${queryString}`, { cache: 'no-store' })
@@ -76,6 +136,21 @@ export default function DetailReportClient() {
   if (loading) return <ReportLoading />;
   if (!projectId) return <Status text="Project ID is missing." />;
 
+  const linkedDetailIds = data?.items
+    .filter((item) => Boolean(item.contentUrl))
+    .map((item) => item.detailId) ?? [];
+
+  const handleUpdateData = async () => {
+    const mode = await chooseReportInputMode('update');
+    if (mode === 'scrape') {
+      await scrape(linkedDetailIds);
+      return;
+    }
+    if (mode === 'manual') {
+      await updateManual(data?.items ?? []);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {data && (
@@ -83,7 +158,7 @@ export default function DetailReportClient() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Brand Name" value={data.project.brand ?? '-'} />
             <Field label="Project Name" value={data.project.name} />
-            <Field label="PIC" value={data.project.pic} />
+            <Field label="Project PIC" value={data.project.pic} />
             <Field label="Report Date" value={data.project.date ? new Date(data.project.date).toLocaleDateString('en-GB', { dateStyle: 'long' }) : '-'} />
           </div>
         </section>
@@ -92,14 +167,16 @@ export default function DetailReportClient() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h1 className="text-2xl font-bold sm:text-3xl">Detail Report</h1><p className="mt-1 text-slate-500">Post Performance Analytics</p></div>
-          <button disabled={scraping || !data?.items.length} onClick={() => scrape(data?.items.map((item) => item.detailId) ?? [])}
+          <button disabled={scraping || updatingManual || !data?.items.length} onClick={() => void handleUpdateData()}
             className="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-            {scraping ? 'Updating data...' : 'Update Data'}
+            {scraping || updatingManual ? 'Updating data...' : 'Update Data'}
           </button>
         </div>
         {errors.length > 0 && <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
         {!data?.items.length ? <p className="mt-8 rounded-xl border border-dashed p-8 text-center text-slate-500">No creators were selected.</p> :
-          <div className="mt-8 space-y-8">{data.items.map((item) => <ReportCard key={item.detailId} item={item} loading={scraping} />)}</div>}
+          <div className="mt-8 space-y-8">{data.items.map((item) =>
+            <ReportCard key={item.detailId} item={item} loading={scraping || updatingManual} />
+          )}</div>}
       </section>
       <div className="flex justify-end"><button onClick={() => router.back()} className="rounded-xl bg-black px-6 py-3 text-sm font-semibold text-white">Back to Report</button></div>
     </div>
@@ -121,7 +198,7 @@ function ReportCard({ item, loading }: { item: Item; loading: boolean }) {
     { title: 'AVG Duration View', raw: report.duration, value: `${report.duration.toFixed(report.duration % 1 ? 1 : 0)} seconds` },
     { title: 'Share', raw: report.shares, value: format(report.shares) },
   ].filter((metric) => metric.raw > 0) : [];
-  const fallbackImage = '/image/default-kol-avatar.png';
+  const fallbackImage = profilePhotoSource(item.photo);
   return (
     <article className="rounded-2xl border border-slate-200 p-4 sm:p-6">
       <div className="mb-5 flex items-center gap-3"><img
@@ -136,22 +213,33 @@ function ReportCard({ item, loading }: { item: Item; loading: boolean }) {
       />
         <div><h2 className="font-bold text-slate-900">{item.creatorName}</h2><p className="text-sm text-slate-500">@{item.username.replace(/^@+/, '')} · {platformInfo?.label ?? item.platform}{item.sow ? ` · ${item.sow}` : ''}</p></div>
       </div>
-      {!item.contentUrl ? <p className="rounded-xl bg-amber-50 p-4 text-amber-800">URL Content has not been entered.</p> : !report ?
-        <p className="rounded-xl bg-slate-50 p-4 text-slate-500">{loading ? 'Fetching metadata from URL...' : 'Metadata is not available. Click Update Data to fetch it.'}</p> :
+      {!report ?
+        <p className="rounded-xl bg-slate-50 p-4 text-slate-500">{loading ? 'Fetching report data...' : item.contentUrl ? 'Metadata is not available. Click Update Data to fetch it.' : 'Choose manual input from the Report page to enter performance data.'}</p> :
         <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
-          <a href={item.contentUrl} target="_blank" rel="noreferrer" className="group relative flex min-h-72 self-start items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
+          {item.contentUrl ? <a href={item.contentUrl} target="_blank" rel="noreferrer" className="group relative flex min-h-72 self-start items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
             <img src={thumbnailSource(report.thumbnail_url, fallbackImage)} alt={`Content by ${item.creatorName}`}
+              referrerPolicy="no-referrer"
               data-fallback={fallbackImage}
               onError={(event) => {
                 const fallback = event.currentTarget.dataset.fallback ?? '/image/default-kol-avatar.png';
-                if (event.currentTarget.src !== new URL(fallback, window.location.origin).href) event.currentTarget.src = fallback;
+                const fallbackUrl = new URL(fallback, window.location.origin).href;
+                const defaultUrl = new URL(DEFAULT_PROFILE_PHOTO, window.location.origin).href;
+                if (event.currentTarget.src !== fallbackUrl) {
+                  event.currentTarget.src = fallback;
+                } else if (event.currentTarget.src !== defaultUrl) {
+                  event.currentTarget.src = DEFAULT_PROFILE_PHOTO;
+                }
               }}
               className="max-h-[560px] w-full rounded-xl object-contain transition duration-300 group-hover:scale-[1.01]" />
             <span className="absolute bottom-3 left-3 rounded-lg bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">Open content</span>
-          </a>
+          </a> : <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+            <img src={profilePhotoSource(item.photo)} alt={item.creatorName} className="h-24 w-24 rounded-full object-cover" />
+            <p className="mt-4 font-semibold text-slate-700">Manual report data</p>
+            <p className="mt-1 text-sm text-slate-500">No content link was provided.</p>
+          </div>}
           <div><h3 className="mb-3 text-lg font-bold">Caption</h3><div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm">{report.caption || '-'}</div>
             {metrics.length > 0 && <><h3 className="mb-4 mt-7 text-lg font-bold">Performance</h3><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{metrics.map((metric) => <Metric key={metric.title} title={metric.title} value={metric.value} />)}</div></>}
-            <p className="mt-4 text-xs text-slate-400">Last fetched {new Date(report.scraped_at).toLocaleString('en-GB')}</p></div>
+            <p className="mt-4 text-xs text-slate-400">Last updated {new Date(report.scraped_at).toLocaleString('en-GB')}</p></div>
         </div>}
     </article>
   );
@@ -161,9 +249,7 @@ function Field({ label, value }: { label: string; value: string }) { return <div
 function Status({ text }: { text: string }) { return <div className="rounded-2xl border bg-white p-10 text-center text-slate-500">{text}</div>; }
 function format(value: number) { return new Intl.NumberFormat('en-US').format(value); }
 function thumbnailSource(url: string | null, fallback: string) {
-  return url?.startsWith('data:image/')
-    ? url
-    : url ? `/api/tracking/detail-report/thumbnail?url=${encodeURIComponent(url)}` : fallback;
+  return url || fallback;
 }
 
 function ReportLoading() {

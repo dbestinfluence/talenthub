@@ -500,7 +500,6 @@ const handleUpdateRunningContent = async (creator: any, mode: "edit" | "view") =
     planning_upload: formatDateForInput(creator.drf_planning_upload),
     actual_upload: formatDateForInput(creator.drf_actual_upload),
     link_content: creator.drf_link_content ?? "",
-    start_project_date: formatDateForInput(projectDetail?.runningStartDate),
   }, mode);
 
   // Jika user menutup modal atau dalam mode view, jangan lakukan apa-apa

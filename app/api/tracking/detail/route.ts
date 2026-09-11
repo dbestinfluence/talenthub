@@ -45,6 +45,7 @@ export async function GET(request: Request) {
       include: {
         mst_creators: true,
         mst_sow: true,
+        detail_report: { select: { id: true } },
       },
       orderBy: {
         drf_id: "asc",
@@ -101,6 +102,7 @@ export async function GET(request: Request) {
         rate: Number(item.drf_markup_price ?? 0),
 
         total: Number(item.drf_markup_price ?? 0) * Number(item.drf_qty),
+        hasReport: Boolean(item.detail_report),
       })),
 
       subtotal,
@@ -180,35 +182,10 @@ export async function PATCH(req: Request) {
     };
 
     if (body.drf_planning_upload !== undefined || body.drf_actual_upload !== undefined) {
-      const detailProject = await prisma.dtl_project.findUnique({
-        where: { drf_id: id },
-        select: {
-          trs_project: {
-            select: { prj_rstartdate: true },
-          },
-        },
-      });
-
-      if (!detailProject) {
-        return NextResponse.json({ error: "Creator detail was not found" }, { status: 404 });
-      }
-
-      const startProjectDate = detailProject.trs_project.prj_rstartdate;
-      if (!startProjectDate) {
-        return NextResponse.json(
-          { error: "Start Project date is not available" },
-          { status: 400 },
-        );
-      }
-
       const validateUploadDate = (value: unknown, label: string) => {
         if (value === undefined || value === null || value === "") return null;
         const uploadDate = new Date(String(value));
         if (Number.isNaN(uploadDate.getTime())) return `${label} is not a valid date`;
-        if (uploadDate < startProjectDate) {
-          const minimumDate = startProjectDate.toISOString().slice(0, 10);
-          return `${label} cannot be earlier than Start Project (${minimumDate})`;
-        }
         return null;
       };
 

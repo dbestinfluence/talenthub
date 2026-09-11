@@ -22,7 +22,7 @@ type RunningProject = {
   brand?: string | null;
   name?: string | null;
   code?: string | null;
-  createdBy?: string | null;
+  projectPic?: string | null;
   runningStartDate?: string | Date | null;
   runningEndDate?: string | Date | null;
   dbest?: { name?: string | null; address?: string | null } | null;
@@ -98,7 +98,7 @@ export default function RunningSection({
     doc.text(`Brand : ${String(projectDetail?.brand ?? "-").toUpperCase()}`, left, 59);
     doc.text(`Project : ${projectDetail?.name ?? "-"}`, left, 65);
     doc.text(`Project Code : ${projectDetail?.code ?? "-"}`, left, 71);
-    doc.text(`PIC : ${projectDetail?.createdBy ?? "-"}`, 157, 59);
+    doc.text(`PIC : ${projectDetail?.projectPic ?? "-"}`, 157, 59);
     doc.text(`Status : Running`, 157, 65);
     doc.text(`Running Period : ${formatDate(projectDetail?.runningStartDate)} - ${formatDate(projectDetail?.runningEndDate)}`, 157, 71);
 

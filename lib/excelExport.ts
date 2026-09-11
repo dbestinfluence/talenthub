@@ -74,7 +74,7 @@ export const createExcelWorkbook = (
   const ws = XLSX.utils.aoa_to_sheet([
     [`Project: ${projectDetail?.name ?? "Untitled Project"}`],
     [`Brand: ${projectDetail?.brand ?? "-"}`],
-    [`PIC: ${projectDetail?.createdBy ?? "-"} | Date: ${projectDetail?.createdAt ? new Date(projectDetail.createdAt).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : "-"}`],
+    [`Project PIC: ${projectDetail?.projectPic ?? "-"} | Date: ${projectDetail?.createdAt ? new Date(projectDetail.createdAt).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : "-"}`],
   ]);
 
   // Merge title cells
