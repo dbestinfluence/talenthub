@@ -424,7 +424,7 @@ export async function scrapeInstagramProfiles(
 //
 // enrichPosts: false -> khusus dipakai validateUsernames (cek valid/invalid
 // doang), supaya nggak buang kuota Apify buat enrich post yang datanya
-// nggak dipakai sama sekali
+// nggak dipakai sama
 export async function scrapeTiktokProfiles(
   usernames: string[],
   sinceDate?: Date,
