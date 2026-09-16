@@ -116,6 +116,7 @@ export async function POST(request: Request) {
         return {
           drf_projectid: newProject.prj_id,
           drf_creatorid: parseInt(creatorDatabaseId),
+          drf_platform: creator.social_media ?? creator.platform ?? null,
           drf_sow: null,
           drf_qty: null,
           drf_rate: null,

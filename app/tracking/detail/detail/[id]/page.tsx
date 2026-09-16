@@ -1,8 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import CreatorDetailClient from "./CreatorDetailClient";
-
-const prisma = new PrismaClient();
 
 export default async function Page({
   params,

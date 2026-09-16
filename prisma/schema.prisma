@@ -112,6 +112,7 @@ model dtl_project {
   modiby              String?        @db.VarChar(20)
   modidate            DateTime?      @default(now()) @db.Timestamp(6)
   drf_creatorid       Int
+  drf_platform        String?        @db.VarChar(20)
   drf_markup_price    Decimal?       @db.Decimal(12, 2)
   detail_report       detail_report?
   mst_creators        mst_creators   @relation(fields: [drf_creatorid], references: [id], map: "fk_dtl_project_creator")

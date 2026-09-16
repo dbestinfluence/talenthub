@@ -93,12 +93,13 @@ async function getRows(projectId: number, detailIds: number[]) {
 }
 
 function serialize(row: Awaited<ReturnType<typeof getRows>>[number]) {
+  const platform = row.drf_platform ?? row.mst_creators.social_media;
   return {
     detailId: row.drf_id,
     creatorId: row.drf_creatorid,
     creatorName: row.mst_creators.name,
     username: row.mst_creators.username,
-    platform: row.mst_creators.social_media,
+    platform,
     followers: row.mst_creators.followers ?? 0,
     photo: row.mst_creators.photo_url,
     sow: row.mst_sow?.sow_nama ?? null,
@@ -213,18 +214,19 @@ export async function POST(request: Request) {
     const results = await Promise.all(prepared.map(async ({ row, metric }) => {
       const validMetric = metric!;
       const contentUrl = row.drf_link_content!.trim();
+      const platform = row.drf_platform ?? row.mst_creators.social_media;
       const interactions = validMetric.likes + validMetric.comments + validMetric.saves
         + validMetric.reposts + validMetric.shares;
       const performance = validMetric.views > 0 ? (interactions / validMetric.views) * 100 : 0;
       const { caption, thumbnailDataUrl, ...manualMetrics } = validMetric;
       const thumbnail = thumbnailDataUrl
         ?? row.detail_report?.thumbnail_url
-        ?? await persistThumbnail([], row.mst_creators.social_media.toLowerCase(), contentUrl);
+        ?? await persistThumbnail([], platform.toLowerCase(), contentUrl);
       await prisma.detail_report.upsert({
         where: { dtl_project_id: row.drf_id },
         update: {
           content_url: contentUrl,
-          platform: row.mst_creators.social_media,
+          platform,
           caption: caption || null,
           thumbnail_url: thumbnail ?? row.detail_report?.thumbnail_url ?? null,
           ...manualMetrics,
@@ -234,7 +236,7 @@ export async function POST(request: Request) {
         create: {
           dtl_project_id: row.drf_id,
           content_url: contentUrl,
-          platform: row.mst_creators.social_media,
+          platform,
           caption: caption || null,
           thumbnail_url: thumbnail,
           ...manualMetrics,
@@ -262,14 +264,15 @@ export async function POST(request: Request) {
     };
     if (!row.drf_link_content) return { ...resultContext, error: 'URL content is empty' };
     try {
-      const identity = getContentIdentity(row.drf_link_content, row.mst_creators.social_media);
+      const platform = row.drf_platform ?? row.mst_creators.social_media;
+      const identity = getContentIdentity(row.drf_link_content, platform);
       console.info('[SCRAPING START]', {
         projectId, creatorId: row.drf_creatorid, detailId: row.drf_id,
         creator: row.mst_creators.username, platform: identity.platform,
         requestedUrl: row.drf_link_content, normalizedUrl: identity.normalizedUrl,
         contentId: identity.contentId,
       });
-      const metric = await scrapeContentUrl(row.drf_link_content, row.mst_creators.social_media);
+      const metric = await scrapeContentUrl(row.drf_link_content, platform);
       console.info('[SCRAPING RESULT]', {
         creatorId: row.drf_creatorid, detailId: row.drf_id,
         requestedUrl: identity.normalizedUrl, returnedUrl: metric.scrapedContentUrl,

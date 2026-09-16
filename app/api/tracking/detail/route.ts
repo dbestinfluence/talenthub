@@ -73,7 +73,7 @@ export async function GET(request: Request) {
         username: item.mst_creators.username,
         photo: item.mst_creators.photo_url,
 
-        platform: item.mst_creators.social_media,
+        platform: item.drf_platform ?? item.mst_creators.social_media,
         tier: item.mst_creators.tier,
         gender: item.mst_creators.gender,
 
@@ -141,6 +141,31 @@ export async function PATCH(req: Request) {
 
     const body = await req.json();
 
+    if (body.platform !== undefined) {
+      const platform = String(body.platform).trim().toLowerCase();
+      if (!['instagram', 'youtube', 'tiktok'].includes(platform)) {
+        return NextResponse.json({ error: "Platform must be Instagram, YouTube, or TikTok" }, { status: 400 });
+      }
+      const detail = await prisma.dtl_project.findUnique({
+        where: { drf_id: id },
+        select: { drf_creatorid: true, trs_project: { select: { prj_status: true } } },
+      });
+      if (!detail) return NextResponse.json({ error: "Creator detail was not found" }, { status: 404 });
+      if (detail.trs_project.prj_status !== 1) {
+        return NextResponse.json({ error: "Platform can only be changed while the project is in Draft" }, { status: 400 });
+      }
+      await prisma.dtl_project.update({
+        where: { drf_id: id },
+        data: {
+          drf_platform: platform,
+          drf_sow: null,
+          modiby: session.user.name ?? "admin",
+          modidate: new Date(),
+        },
+      });
+      return NextResponse.json({ success: true, platform });
+    }
+
     if (body.drf_sow !== undefined && body.drf_sow !== null) {
       const sowId = Number(body.drf_sow);
 
@@ -158,11 +183,12 @@ export async function PATCH(req: Request) {
 
       const detail = await prisma.dtl_project.findUnique({
         where: { drf_id: id },
-        select: { mst_creators: { select: { social_media: true } } },
+        select: { drf_platform: true, mst_creators: { select: { social_media: true } } },
       });
       if (!detail) return NextResponse.json({ error: "Creator detail was not found" }, { status: 404 });
-      if (!isSowForPlatform(sow.sow_nama, detail.mst_creators.social_media)) {
-        return NextResponse.json({ error: `The selected SOW does not match the creator platform (${detail.mst_creators.social_media})` }, { status: 400 });
+      const detailPlatform = detail.drf_platform ?? detail.mst_creators.social_media;
+      if (!isSowForPlatform(sow.sow_nama, detailPlatform)) {
+        return NextResponse.json({ error: `The selected SOW does not match the creator platform (${detailPlatform})` }, { status: 400 });
       }
     }
 
@@ -227,7 +253,7 @@ export async function PATCH(req: Request) {
 
         let identity;
         try {
-          identity = getContentIdentity(linkContent, detail.mst_creators.social_media);
+          identity = getContentIdentity(linkContent, detail.drf_platform ?? detail.mst_creators.social_media);
         } catch (error) {
           return NextResponse.json(
             { error: error instanceof Error ? error.message : "Invalid content URL" },
@@ -322,6 +348,7 @@ export async function POST(req: Request) {
       data: {
         drf_projectid: source.drf_projectid,
         drf_creatorid: source.drf_creatorid,
+        drf_platform: source.drf_platform,
         drf_sow: null,
         drf_qty: null,
         drf_rate: source.drf_rate,

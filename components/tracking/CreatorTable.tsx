@@ -130,6 +130,7 @@ type Props = {
   creators: any[];
   sowOptions?: { sow_id: number; sow_nama: string | null }[];
   onSowChange?: (creatorId: number, sowId: number | null) => void;
+  onPlatformChange?: (creatorId: number, platform: string) => void;
   sowReadOnly?: boolean;
   invalidSowCreatorIds?: number[];
   reportMode?: boolean;
@@ -173,6 +174,7 @@ export default function CreatorTable({
   creators,
   sowOptions,
   onSowChange,
+  onPlatformChange,
   sowReadOnly = false,
   invalidSowCreatorIds = [],
   reportMode = false,
@@ -449,7 +451,17 @@ export default function CreatorTable({
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-          {creator.platform ? creator.platform : "-"}
+          {draftPricingMode && draftPricingEditable ? (
+            <select
+              value={String(creator.platform ?? "").toLowerCase()}
+              onChange={(event) => onPlatformChange?.(creator.drf_id, event.target.value)}
+              className="min-w-36 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-500"
+            >
+              <option value="instagram">Instagram</option>
+              <option value="youtube">YouTube</option>
+              <option value="tiktok">TikTok</option>
+            </select>
+          ) : creator.platform ? creator.platform : "-"}
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">

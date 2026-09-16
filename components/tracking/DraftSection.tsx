@@ -19,6 +19,7 @@ type DraftSectionProps = {
   onView?: (creator: any) => void;
   sowOptions: { sow_id: number; sow_nama: string | null }[];
   onSowChange: (creatorId: number, sowId: number | null) => void;
+  onPlatformChange: (creatorId: number, platform: string) => void;
   invalidSowCreatorIds?: number[];
   onDraftPriceChange: (creatorId: number, field: "rateCard" | "markupPrice" | "qty", value: number | null) => void;
   invalidPricingFields?: Record<number, { rateCard: boolean; markupPrice: boolean; qty: boolean }>;
@@ -37,6 +38,7 @@ export default function DraftSection({
   onView,
   sowOptions,
   onSowChange,
+  onPlatformChange,
   invalidSowCreatorIds,
   onDraftPriceChange,
   invalidPricingFields,
@@ -112,6 +114,7 @@ export default function DraftSection({
             onView={onView}
             sowOptions={sowOptions}
             onSowChange={onSowChange}
+            onPlatformChange={onPlatformChange}
             sowReadOnly={readOnly}
             invalidSowCreatorIds={invalidSowCreatorIds}
             draftPricingMode

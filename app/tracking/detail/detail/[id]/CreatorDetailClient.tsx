@@ -2,6 +2,10 @@
 
 import { useState, useMemo, useEffect } from "react";
 import DefaultLayout from "@/components/Layout/DefaultLayout";
+import FileDocumentIcon from "@/components/icons/FileDocumentIcon";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { loadCompanyLogo } from "@/lib/pdf-branding";
 import {
   computeInsightsFromPosts,
   type RawPostLike,
@@ -703,6 +707,225 @@ export default function CreatorDetailClient(props: {
       .slice(0, 5);
   }, [performancePosts]);
 
+  const handleExportPdf = async () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const left = 14;
+    const right = pageWidth - 14;
+    const brown: [number, number, number] = [205, 159, 126];
+    const black: [number, number, number] = [0, 0, 0];
+    const logo = await loadCompanyLogo();
+    const allPerformance = computeInsightsFromPosts(posts, profile.followers, 0);
+    const number = (value: number | null | undefined) =>
+      Number(value ?? 0).toLocaleString("en-US");
+    const optionalNumber = (value: number | null | undefined) =>
+      typeof value === "number" && Number.isFinite(value) && value >= 0
+        ? value.toLocaleString("en-US")
+        : "-";
+    const engagement = (post: Post) =>
+      Math.max(0, post.likes ?? 0) +
+      Math.max(0, post.comments ?? 0) +
+      Math.max(0, post.shares ?? 0) +
+      Math.max(0, post.saves ?? 0) +
+      Math.max(0, post.reposts ?? 0);
+    const allTopPosts = [...posts]
+      .sort((a, b) => {
+        const difference = engagement(b) - engagement(a);
+        if (difference !== 0) return difference;
+
+        return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
+      })
+      .slice(0, 5);
+
+    const drawBorder = () => {
+      doc.setDrawColor(221, 226, 232);
+      doc.setLineWidth(0.35);
+      doc.roundedRect(8, 6, pageWidth - 16, pageHeight - 12, 2, 2);
+      doc.setFillColor(...brown);
+      doc.roundedRect(8, 6, pageWidth - 16, 3, 2, 2, "F");
+    };
+
+    drawBorder();
+    if (logo) doc.addImage(logo, "PNG", pageWidth - 65, 10, 48, 25, undefined, "FAST");
+    doc.setTextColor(...black);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("CREATOR DETAIL REPORT", left, 20);
+    doc.setFontSize(11);
+    doc.text(profile.name, left, 30);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`@${profile.username} · ${profile.socialMedia}`, left, 36);
+    doc.text(`Last updated: ${profile.lastScrapedAt ? formatDate(profile.lastScrapedAt) : "-"}`, left, 42);
+
+    const cards = [
+      ["AVG. VIEWS", number(allPerformance.avgViews)],
+      ["AVG. BRAND VIEWS", number(profile.averageViewBrand)],
+      ["ER / FOLLOWERS", `${allPerformance.erFollowers.toFixed(2)}%`],
+      ["ER / VIEWS", `${allPerformance.erViews.toFixed(2)}%`],
+      ["ER / TALENTHUB", `${allPerformance.erTalenthub.toFixed(2)}%`],
+      ["POSTS BENCHMARK", number(posts.length)],
+    ];
+    const cardGap = 3;
+    const cardWidth = (right - left - cardGap * (cards.length - 1)) / cards.length;
+    cards.forEach(([label, value], index) => {
+      const x = left + index * (cardWidth + cardGap);
+      doc.setFillColor(250, 246, 242);
+      doc.setDrawColor(...brown);
+      doc.roundedRect(x, 50, cardWidth, 22, 2, 2, "FD");
+      doc.setFillColor(...brown);
+      doc.roundedRect(x, 50, cardWidth, 2.2, 2, 2, "F");
+      doc.setTextColor(105, 84, 68);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.text(label, x + 3, 57);
+      doc.setTextColor(...black);
+      doc.setFontSize(13);
+      doc.text(value, x + 3, 67);
+    });
+
+    const metricChart = [
+      ["Likes", allPerformance.avgLikes],
+      ["Comments", allPerformance.avgComments],
+      ["Shares", allPerformance.avgShares],
+      ["Saves", allPerformance.avgSaves],
+      ["Reposts", allPerformance.avgReposts],
+    ] as const;
+    const metricMax = Math.max(1, ...metricChart.map(([, value]) => value));
+    doc.setFillColor(251, 252, 253);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(left, 76, 127, 69, 2, 2, "FD");
+    doc.roundedRect(148, 76, 135, 69, 2, 2, "FD");
+    doc.setTextColor(...black);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("AVERAGE ENGAGEMENT", left, 82);
+    metricChart.forEach(([label, value], index) => {
+      const chartY = 90 + index * 10;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text(label, left + 4, chartY + 4);
+      doc.setFillColor(235, 238, 242);
+      doc.roundedRect(left + 27, chartY, 73, 5, 1.5, 1.5, "F");
+      doc.setFillColor(...brown);
+      doc.roundedRect(left + 27, chartY, Math.max(1, (value / metricMax) * 73), 5, 1.5, 1.5, "F");
+      doc.setFont("helvetica", "bold");
+      doc.text(number(value), left + 104, chartY + 4);
+    });
+
+    const chartPosts = allTopPosts;
+    const contentMax = Math.max(1, ...chartPosts.map(engagement));
+    const chartX = 152;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("TOP CONTENT BY ENGAGEMENT", chartX, 82);
+    chartPosts.forEach((post, index) => {
+      const chartY = 90 + index * 10;
+      const caption = (post.caption || `Content ${index + 1}`).replace(/\s+/g, " ");
+      const label = caption.slice(0, 28);
+      const value = engagement(post);
+      doc.setFillColor(index === 0 ? 227 : 205, index === 0 ? 164 : 159, index === 0 ? 88 : 126);
+      doc.circle(chartX + 3, chartY + 2.5, 2.5, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      doc.text(String(index + 1), chartX + 3, chartY + 3.4, { align: "center" });
+      doc.setTextColor(...black);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.2);
+      doc.text(`${label}${caption.length > 28 ? "..." : ""}`, chartX + 8, chartY + 4, { maxWidth: 65 });
+      doc.setFillColor(235, 238, 242);
+      doc.roundedRect(chartX + 76, chartY, 36, 5, 1.5, 1.5, "F");
+      doc.setFillColor(227, 164, 88);
+      doc.roundedRect(chartX + 76, chartY, Math.max(1, (value / contentMax) * 36), 5, 1.5, 1.5, "F");
+      doc.setFont("helvetica", "bold");
+      doc.text(number(value), chartX + 116, chartY + 4);
+    });
+    if (chartPosts.length === 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text("No content data available.", chartX, 94);
+    }
+
+    const drawTopicBox = (title: string, value: string, x: number) => {
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(210, 218, 228);
+      doc.roundedRect(x, 151, 130, 34, 2, 2, "FD");
+      doc.setFillColor(...brown);
+      doc.roundedRect(x, 151, 4, 34, 2, 2, "F");
+      doc.setTextColor(...black);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(title, x + 8, 159);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(doc.splitTextToSize(value || "-", 117).slice(0, 3), x + 8, 166);
+    };
+    drawTopicBox("TOP HASHTAGS", profile.topHashtags.map((item) => `#${item.tag} (${item.count})`).join("   "), left);
+    drawTopicBox("TOP MENTIONS", profile.topMentions.map((item) => `@${item.mention} (${item.count})`).join("   "), 153);
+
+    doc.addPage();
+    drawBorder();
+    doc.setTextColor(...black);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("TOP 5 CONTENT DATA", left, 20);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text("Selected from Data All by highest total engagement", left, 26);
+
+    autoTable(doc, {
+      startY: 32,
+      head: [["No.", "Posted At", "Caption", "Likes", "Comments", "Views", "Shares", "Saves", "Reposts", "Content URL"]],
+      body: allTopPosts.map((post, index) => [
+        index + 1,
+        post.postedAt ? formatDate(post.postedAt) : "-",
+        post.caption || "-",
+        optionalNumber(post.likes),
+        optionalNumber(post.comments),
+        optionalNumber(post.views),
+        optionalNumber(post.shares),
+        optionalNumber(post.saves),
+        optionalNumber(post.reposts),
+        post.postUrl || "-",
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: brown, textColor: black, fontStyle: "bold", halign: "center" },
+      alternateRowStyles: { fillColor: [250, 247, 244] },
+      styles: { fontSize: 7, lineColor: [220, 224, 230], lineWidth: 0.15, cellPadding: 1.8, overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 68 },
+        3: { cellWidth: 17, halign: "right" },
+        4: { cellWidth: 17, halign: "right" },
+        5: { cellWidth: 19, halign: "right" },
+        6: { cellWidth: 17, halign: "right" },
+        7: { cellWidth: 17, halign: "right" },
+        8: { cellWidth: 17, halign: "right" },
+        9: { cellWidth: 61 },
+      },
+      margin: { left, right: pageWidth - right, top: 12, bottom: 18 },
+      didDrawPage: drawBorder,
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let page = 1; page <= totalPages; page += 1) {
+      doc.setPage(page);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(left, pageHeight - 14, right, pageHeight - 14);
+      doc.setTextColor(100, 116, 139);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text(`Creator Analytics | @${profile.username}`, left, pageHeight - 9);
+      doc.text(`Page ${page} of ${totalPages}`, right, pageHeight - 9, { align: "right" });
+    }
+
+    const safeName = profile.username.replace(/[^a-z0-9_-]+/gi, "-");
+    doc.save(`Creator-Detail-${safeName || profile.id}.pdf`);
+  };
+
   return (
     <DefaultLayout>
       <div className="space-y-6">
@@ -976,6 +1199,17 @@ Calculation follows the selected period.
             </div>
           </div>
         </section>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => void handleExportPdf()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold transition hover:bg-slate-50 sm:w-auto"
+          >
+            <FileDocumentIcon className="h-4 w-4" />
+            Export PDF
+          </button>
+        </div>
       </div>
     </DefaultLayout>
   );

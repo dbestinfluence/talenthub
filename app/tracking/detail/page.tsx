@@ -238,6 +238,28 @@ const handleDraftPriceChange = async (
   }
 };
 
+const handlePlatformChange = async (creatorId: number, platform: string) => {
+  try {
+    const response = await fetch(`/api/tracking/detail?id=${creatorId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "Failed to update platform");
+
+    setCreators((current) => current.map((creator) =>
+      creator.drf_id === creatorId
+        ? { ...creator, platform: result.platform, sowId: null, sow: null }
+        : creator
+    ));
+    setInvalidSowCreatorIds((current) => [...new Set([...current, creatorId])]);
+  } catch (error) {
+    await showAlertValidationError(error instanceof Error ? error.message : "Failed to update platform");
+    await loadCreators();
+  }
+};
+
 const handleAddSow = async (creatorId: number) => {
   try {
     const response = await fetch("/api/tracking/detail", {
@@ -665,6 +687,7 @@ const renderTrackingSection = () => {
           onView={(creator) => handleUpdateRunningContent(creator, "view")}
           sowOptions={sowOptions}
           onSowChange={handleSowChange}
+          onPlatformChange={handlePlatformChange}
           invalidSowCreatorIds={invalidSowCreatorIds}
           onDraftPriceChange={handleDraftPriceChange}
           invalidPricingFields={invalidPricingFields}
