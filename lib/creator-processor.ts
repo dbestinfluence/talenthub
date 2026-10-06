@@ -17,8 +17,6 @@ import {
   persistFirstProfileImage,
 } from "./profile-image";
 
-import { persistPostThumbnails } from "./post-thumbnail";
-
 const prisma = new PrismaClient();
 
 export interface SeedEntry {
@@ -106,15 +104,19 @@ export async function persistCreatorProfile(
   ]);
 
   const uploadedPhotoUrl = temporaryPhotoUrl
-    ? await persistFirstProfileImage([temporaryPhotoUrl], {
-        username: profile.username,
-        platform: profile.socialMedia as "instagram" | "tiktok",
-      })
+    ? await persistFirstProfileImage(
+        [temporaryPhotoUrl],
+        {
+          username: profile.username,
+          platform: profile.socialMedia as "instagram" | "tiktok",
+        }
+      )
     : null;
 
   // Jika download/upload Blob gagal, pertahankan foto permanen sebelumnya.
   // URL CDN Instagram/TikTok yang sementara tidak disimpan ke photo_url.
-  const persistedPhoto = uploadedPhotoUrl ?? existingCreator?.photo_url ?? null;
+  const persistedPhoto =
+    uploadedPhotoUrl ?? existingCreator?.photo_url ?? null;
 
   const validPosts = profile.posts.filter(
     (post) => post.likes >= 0 && post.comments >= 0 && Boolean(post.postUrl)
@@ -141,7 +143,9 @@ export async function persistCreatorProfile(
       followers: profile.followers,
       following: profile.following,
       total_post: profile.totalPost,
-      ...(persistedPhoto ? { photo_url: persistedPhoto } : {}),
+      ...(persistedPhoto
+        ? { photo_url: persistedPhoto }
+        : {}),
       tier,
       average_view: Math.round(avgView),
       average_view_brand: Math.round(avgViewBrand),
@@ -188,62 +192,18 @@ export async function persistCreatorProfile(
     },
   });
 
-  /*
-   * Ambil thumbnail permanen yang sebelumnya sudah tersimpan.
-   * Ini menjadi fallback jika download/upload thumbnail baru gagal.
-   */
-  const existingPosts = await prisma.dtl_creator_posts.findMany({
-    where: {
-      creator_id: creator.id,
-    },
-    select: {
-      post_url: true,
-      thumbnail_url: true,
-    },
-  });
-
-  const existingThumbnailByPostUrl = new Map<string, string>();
-
-  for (const post of existingPosts) {
-    const postUrl = String(post.post_url ?? "").trim();
-    const thumbnailUrl = String(post.thumbnail_url ?? "").trim();
-
-    if (postUrl && thumbnailUrl) {
-      existingThumbnailByPostUrl.set(postUrl, thumbnailUrl);
-    }
-  }
-
-  const postsToPersist = await persistPostThumbnails(profile.posts, {
-    username: profile.username,
-    platform: profile.socialMedia as "instagram" | "tiktok",
-    existingThumbnailByPostUrl,
-    concurrency: 3,
-  });
-
-  /*
-   * Khusus Quick Search:
-   * hapus semua post lama setelah thumbnail baru selesai diproses.
-   *
-   * Background pipeline tidak mengirim replaceStoredPosts: true,
-   * sehingga post lama tidak akan dihapus.
-   */
-  if (options.replaceStoredPosts === true) {
-    const deletedPosts = await prisma.dtl_creator_posts.deleteMany({
-      where: {
-        creator_id: creator.id,
-      },
+  if (options.replaceStoredPosts) {
+    const deleted = await prisma.dtl_creator_posts.deleteMany({
+      where: { creator_id: creator.id },
     });
-
     console.log(
-      `  [REPLACE] ${deletedPosts.count} post lama ${profile.username} dihapus`
+      `  [CLEANUP] ${deleted.count} post lama ${profile.username} dihapus`
     );
   }
 
   let savedPosts = 0;
-
-  for (let i = 0; i < postsToPersist.length; i++) {
-    const p = postsToPersist[i];
-
+  for (let i = 0; i < profile.posts.length; i++) {
+    const p = profile.posts[i];
     try {
       await prisma.dtl_creator_posts.upsert({
         where: {
@@ -253,20 +213,18 @@ export async function persistCreatorProfile(
             caption: p.caption,
           },
         },
-
         update: {
           likes: p.likes,
           comments: p.comments,
           views: p.views,
           shares: p.shares,
           saves: p.saves,
-          reposts: p.reposts,
+          reposts: p.reposts, // FIX: dulu field ini tidak pernah ditulis
           post_url: p.postUrl,
-          thumbnail_url: p.thumbnailUrl ?? null,
+          thumbnail_url: p.thumbnailUrl,
           is_endorse:
-            endorseResults.find((item) => item.index === i)?.isEndorse ?? false,
+            endorseResults.find((e) => e.index === i)?.isEndorse ?? false,
         },
-
         create: {
           creator_id: creator.id,
           caption: p.caption,
@@ -275,24 +233,21 @@ export async function persistCreatorProfile(
           views: p.views,
           shares: p.shares,
           saves: p.saves,
-          reposts: p.reposts,
+          reposts: p.reposts, // FIX: dulu field ini tidak pernah ditulis
           post_url: p.postUrl,
-          thumbnail_url: p.thumbnailUrl ?? null,
+          thumbnail_url: p.thumbnailUrl,
           is_endorse:
-            endorseResults.find((item) => item.index === i)?.isEndorse ?? false,
+            endorseResults.find((e) => e.index === i)?.isEndorse ?? false,
           posted_at: new Date(p.postedAt),
         },
       });
-
       savedPosts++;
-    } catch (error) {
-      console.error(`  [POST ERROR] Gagal menyimpan post index ${i}:`, error);
+    } catch (err) {
+      console.error(`  Gagal simpan post index ${i}:`, err);
     }
   }
-
   console.log(
-    `  [OK] persistCreatorProfile: ${profile.username}, ` +
-      `id ${creator.id}, ${savedPosts}/${postsToPersist.length} post`
+    `  [OK] persistCreatorProfile: ${profile.username}, id ${creator.id}, ${savedPosts}/${profile.posts.length} post`
   );
 
   // Enrichment shares/saves/reposts untuk N post TERBARU creator ini (dari DB).
