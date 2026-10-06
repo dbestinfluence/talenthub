@@ -112,8 +112,8 @@ model dtl_project {
   modiby              String?        @db.VarChar(20)
   modidate            DateTime?      @default(now()) @db.Timestamp(6)
   drf_creatorid       Int
-  drf_platform        String?        @db.VarChar(20)
   drf_markup_price    Decimal?       @db.Decimal(12, 2)
+  drf_platform        String?        @db.VarChar(20)
   detail_report       detail_report?
   mst_creators        mst_creators   @relation(fields: [drf_creatorid], references: [id], map: "fk_dtl_project_creator")
   mst_sow             mst_sow?       @relation(fields: [drf_sow], references: [sow_id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dtl_project_to_sow")
@@ -259,8 +259,12 @@ model mst_creators {
   avg_shares         Int?                @default(0)
   avg_saves          Int?                @default(0)
   avg_reposts        Int?                @default(0)
+  photo_data         Bytes?
+  photo_mime_type    String?
+  photo_updated_at   DateTime?           @db.Timestamptz(6)
   dtl_creator_posts  dtl_creator_posts[]
   dtl_project        dtl_project[]
+  mst_creator_media  mst_creator_media?
   mst_categories     mst_categories?     @relation(fields: [category_id], references: [id], onUpdate: NoAction, map: "fk_creator_category")
   mst_cities         mst_cities?         @relation(fields: [city_id], references: [id], onUpdate: NoAction, map: "fk_creator_city")
 
@@ -269,25 +273,31 @@ model mst_creators {
 }
 
 model dtl_creator_posts {
-  id            Int          @id @default(autoincrement())
-  creator_id    Int
-  post_url      String?
-  caption       String?
-  likes         Int?         @default(0)
-  comments      Int?         @default(0)
-  views         Int?         @default(0)
-  category_ai   String?      @db.VarChar(100)
-  is_endorse    Boolean      @default(false)
-  posted_at     DateTime?    @db.Timestamp(6)
-  scraped_at    DateTime     @default(now()) @db.Timestamp(6)
-  thumbnail_url String?
-  shares        Int?
-  saves         Int?
-  reposts       Int?
-  mst_creators  mst_creators @relation(fields: [creator_id], references: [id], onDelete: Cascade, map: "fk_post_creator")
+  id                     Int                     @id @default(autoincrement())
+  creator_id             Int
+  post_url               String?
+  caption                String?
+  likes                  Int?                    @default(0)
+  comments               Int?                    @default(0)
+  views                  Int?                    @default(0)
+  category_ai            String?                 @db.VarChar(100)
+  is_endorse             Boolean                 @default(false)
+  posted_at              DateTime?               @db.Timestamp(6)
+  scraped_at             DateTime                @default(now()) @db.Timestamp(6)
+  thumbnail_url          String?
+  shares                 Int?
+  saves                  Int?
+  reposts                Int?
+  is_top_content         Boolean                 @default(false)
+  thumbnail_data         Bytes?
+  thumbnail_mime_type    String?
+  thumbnail_updated_at   DateTime?               @db.Timestamptz(6)
+  dtl_creator_post_media dtl_creator_post_media?
+  mst_creators           mst_creators            @relation(fields: [creator_id], references: [id], onDelete: Cascade, map: "fk_post_creator")
 
   @@unique([creator_id, posted_at, caption], name: "uq_creator_post", map: "uq_creator_post")
   @@index([creator_id, is_endorse], map: "idx_post_creator_endorse")
+  @@index([creator_id, is_top_content], map: "idx_posts_creator_top_content")
 }
 
 model stg_discovered_usernames {
@@ -300,6 +310,26 @@ model stg_discovered_usernames {
   validated_at      DateTime?
 
   @@unique([username, social_media], map: "uq_discovered_username_platform")
+}
+
+model dtl_creator_post_media {
+  post_id           Int               @id
+  image_data        Bytes
+  content_type      String            @default("image/webp") @db.VarChar(100)
+  size_bytes        Int
+  created_at        DateTime          @default(now()) @db.Timestamp(6)
+  updated_at        DateTime          @default(now()) @db.Timestamp(6)
+  dtl_creator_posts dtl_creator_posts @relation(fields: [post_id], references: [id], onDelete: Cascade, map: "fk_post_media_post")
+}
+
+model mst_creator_media {
+  creator_id   Int          @id
+  image_data   Bytes
+  content_type String       @default("image/webp") @db.VarChar(100)
+  size_bytes   Int
+  created_at   DateTime     @default(now()) @db.Timestamp(6)
+  updated_at   DateTime     @default(now()) @db.Timestamp(6)
+  mst_creators mst_creators @relation(fields: [creator_id], references: [id], onDelete: Cascade, map: "fk_creator_media_creator")
 }
 
 enum Role {

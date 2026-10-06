@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useMemo, useEffect } from "react";
 import DefaultLayout from "@/components/Layout/DefaultLayout";
 import FileDocumentIcon from "@/components/icons/FileDocumentIcon";
@@ -10,9 +9,7 @@ import {
   computeInsightsFromPosts,
   type RawPostLike,
 } from "@/lib/insights";
-
 type IconProps = { className?: string };
-
 function Icon({
   className,
   children,
@@ -32,7 +29,6 @@ function Icon({
     </svg>
   );
 }
-
 const Users = ({ className }: IconProps) => (
   <Icon className={className}>
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -108,56 +104,46 @@ const Info = ({ className }: IconProps) => (
     <line x1="12" y1="8" x2="12.01" y2="8" />
   </Icon>
 );
-
 type Profile = {
   id: number;
   name: string;
   username: string;
   photoUrl: string | null;
-
   followers: number;
   following: number | null;
-
   socialMedia: string;
-
   totalPosts: number;
   totalPost: number;
-
   lastScrapedAt: string | null;
-
   // ============================
   // DATABASE METRICS mst_creators
   // ============================
-
   averageView: number;
   averageViewBrand: number;
-
   avgLikes: number;
   avgComments: number;
-
   avgShares: number;
   avgSaves: number;
   avgReposts: number;
-
   erFollowers: number;
   erViews: number;
   erTalenthub: number;
-
   topHashtags: {
     tag: string;
     count: number;
   }[];
-
   topMentions: {
     mention: string;
     count: number;
   }[];
 };
-
-type Post = RawPostLike & { id: number };
-
+type Post = RawPostLike & {
+  id: number;
+  isTopContent?: boolean;
+  isEndorse?: boolean;
+  categoryAi?: string | null;
+};
 type PerformancePeriod = "all" | "7" | "30" | "60" | "90";
-
 const PERFORMANCE_PERIODS: {
   value: PerformancePeriod;
   label: string;
@@ -168,27 +154,23 @@ const PERFORMANCE_PERIODS: {
   { value: "60", label: "H-60" },
   { value: "90", label: "H-90" },
 ];
-
 function formatNumber(num: number): string {
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
   if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
   return num.toString();
 }
-
 function formatOptionalMetric(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return "—";
   }
   return formatNumber(value);
 }
-
 // Instagram sends -1 (instead of a real count) when the creator has hidden
 // the like count on that post. Treat any negative value as "hidden", not
 // as an actual number, so we never render a raw "-1" to the user.
 function isHiddenCount(value: number): boolean {
   return value < 0;
 }
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
@@ -198,12 +180,10 @@ function formatDate(iso: string): string {
     year: "numeric",
   });
 }
-
 function proxied(url?: string | null): string {
   const value = String(url ?? "").trim();
   if (!value) return "";
   if (value.startsWith("/") || value.startsWith("data:image/")) return value;
-
   /*
    * File di Vercel Blob sudah public dan stabil, jadi gunakan URL-nya
    * secara langsung. Jangan lewatkan ke /api/image-proxy karena proxy
@@ -211,7 +191,6 @@ function proxied(url?: string | null): string {
    */
   try {
     const hostname = new URL(value).hostname.toLowerCase();
-
     if (
       hostname === "blob.vercel-storage.com" ||
       hostname.endsWith(".blob.vercel-storage.com")
@@ -221,26 +200,20 @@ function proxied(url?: string | null): string {
   } catch {
     return "";
   }
-
   return "/api/image-proxy?url=" + encodeURIComponent(value);
 }
-
 /**
  * Avatar default hanya boleh dipakai untuk foto profil.
  * Jangan pernah menampilkannya sebagai thumbnail konten.
  */
 function imageIdentity(value?: string | null): string {
   const url = String(value ?? "").trim();
-
   if (!url) return "";
-
   if (url.startsWith("data:image/")) {
     return url;
   }
-
   try {
     const parsed = new URL(url, "https://talenthub.local");
-
     return (
       parsed.hostname.toLowerCase() +
       parsed.pathname.toLowerCase().replace(/\/+$/, "")
@@ -249,15 +222,12 @@ function imageIdentity(value?: string | null): string {
     return url.toLowerCase().split("?")[0];
   }
 }
-
 function contentThumbnailSource(
   thumbnailUrl?: string | null,
   profilePhotoUrl?: string | null
 ): string {
   const thumbnail = String(thumbnailUrl ?? "").trim();
-
   if (!thumbnail) return "";
-
   /*
    * Ada data lama yang menyimpan foto profil sebagai thumbnail post.
    * Jika gambar post sama dengan foto profil, anggap thumbnail tidak ada.
@@ -268,9 +238,7 @@ function contentThumbnailSource(
   ) {
     return "";
   }
-
   const normalizedThumbnail = thumbnail.toLowerCase().split("?")[0];
-
   if (
     normalizedThumbnail.includes("default-kol-avatar") ||
     normalizedThumbnail.includes("default-profile") ||
@@ -279,10 +247,8 @@ function contentThumbnailSource(
   ) {
     return "";
   }
-
   return proxied(thumbnail);
 }
-
 // Outline-icon-in-a-box style, matching the step-indicator look
 // (rounded square, border, icon centered, light tint background).
 function MetricCard(props: {
@@ -293,33 +259,25 @@ function MetricCard(props: {
   info?: string;
 }) {
   const [showInfo, setShowInfo] = useState(false);
-
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as HTMLElement;
-
       if (!target.closest("[data-info-card]")) {
         setShowInfo(false);
       }
     }
-
     function handleEsc(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setShowInfo(false);
       }
     }
-
     document.addEventListener("mousedown", handleClickOutside);
-
     document.addEventListener("keydown", handleEsc);
-
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
-
       document.removeEventListener("keydown", handleEsc);
     };
   }, []);
-
   return (
     <div
       data-info-card
@@ -343,7 +301,6 @@ function MetricCard(props: {
       >
         {props.icon}
       </div>
-
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <p
@@ -356,12 +313,10 @@ function MetricCard(props: {
           >
             {props.label.toUpperCase()}
           </p>
-
           {props.info && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-
                 setShowInfo((prev) => !prev);
               }}
               className="
@@ -381,7 +336,6 @@ function MetricCard(props: {
             </button>
           )}
         </div>
-
         <p
           className="
           mt-1
@@ -393,7 +347,6 @@ function MetricCard(props: {
           {props.value}
         </p>
       </div>
-
       {showInfo && props.info && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -416,7 +369,6 @@ function MetricCard(props: {
           "
         >
           {/* Header */}
-
           <div
             className="
             mb-3
@@ -446,7 +398,6 @@ function MetricCard(props: {
               >
                 <Info className="h-4 w-4" />
               </div>
-
               <span
                 className="
                 text-sm
@@ -457,7 +408,6 @@ function MetricCard(props: {
                 Detail Formula
               </span>
             </div>
-
             <button
               onClick={() => setShowInfo(false)}
               className="
@@ -470,9 +420,7 @@ function MetricCard(props: {
               ✕
             </button>
           </div>
-
           {/* Content */}
-
           <div
             className="
             rounded-xl
@@ -486,7 +434,6 @@ function MetricCard(props: {
           >
             {props.info}
           </div>
-
           <div
             className="
             mt-3
@@ -501,7 +448,6 @@ function MetricCard(props: {
     </div>
   );
 }
-
 // Card shell filled with real hashtag/mention pills when data is available.
 function TagListCard({
   title,
@@ -519,7 +465,6 @@ function TagListCard({
     variant === "hashtag"
       ? "bg-indigo-50 text-indigo-600"
       : "bg-sky-50 text-sky-600";
-
   return (
     <div
       className={
@@ -547,7 +492,6 @@ function TagListCard({
     </div>
   );
 }
-
 // Bigger card for the content grid: large square thumbnail on top,
 // likes/comments/views/shares/saves as caption underneath.
 function PostCard({
@@ -559,11 +503,18 @@ function PostCard({
 }) {
   const likesHidden = isHiddenCount(post.likes);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  // Binary thumbnail hanya disimpan untuk post Top Content.
+  // Gunakan endpoint Neon sebagai fallback agar tidak bergantung pada CDN.
+  const thumbnailUrl =
+    String(post.thumbnailUrl ?? "").trim() ||
+    (post.isTopContent ? `/api/media/posts/${post.id}` : "");
   const thumbnailSrc = contentThumbnailSource(
-    post.thumbnailUrl,
+    thumbnailUrl,
     profilePhotoUrl
   );
-
+  useEffect(() => {
+    setThumbnailFailed(false);
+  }, [thumbnailSrc]);
   return (
     <a
       href={post.postUrl || "#"}
@@ -585,7 +536,6 @@ function PostCard({
           </div>
         )}
       </div>
-
       {/* Performance Metrics */}
       <div className="grid grid-cols-3 gap-x-2 gap-y-3 p-4">
         {/* Likes */}
@@ -603,19 +553,16 @@ function PostCard({
             {formatNumber(post.likes)}
           </p>
         )}
-
         {/* Comments */}
         <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
           <MessageCircle className="h-4 w-4 text-emerald-500" />
           {formatNumber(post.comments)}
         </p>
-
         {/* Views */}
         <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
           <Eye className="h-4 w-4 text-sky-500" />
           {formatOptionalMetric(post.views)}
         </p>
-
         {/* Shares */}
         <p
           className="flex items-center justify-center gap-1.5 text-xs text-slate-500"
@@ -626,7 +573,6 @@ function PostCard({
           <Share2 className="h-4 w-4 text-indigo-500" />
           {formatOptionalMetric(post.shares)}
         </p>
-
         {/* Saves */}
         <p
           className="flex items-center justify-center gap-1.5 text-xs text-slate-500"
@@ -635,7 +581,6 @@ function PostCard({
           <Bookmark className="h-4 w-4 text-amber-500" />
           {formatOptionalMetric(post.saves)}
         </p>
-
         {/* Reposts */}
         <p
           className="flex items-center justify-center gap-1.5 text-xs text-slate-500"
@@ -650,7 +595,6 @@ function PostCard({
     </a>
   );
 }
-
 export default function CreatorDetailClient(props: {
   profile: Profile;
   posts: Post[];
@@ -658,19 +602,15 @@ export default function CreatorDetailClient(props: {
   const { profile, posts } = props;
   const [performancePeriod, setPerformancePeriod] =
     useState<PerformancePeriod>("all");
-
   const performancePosts = useMemo(() => {
     if (performancePeriod === "all") return posts;
-
     const days = Number(performancePeriod);
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-
     return posts.filter((post) => {
       const postedTime = new Date(post.postedAt).getTime();
       return !Number.isNaN(postedTime) && postedTime >= cutoff;
     });
   }, [posts, performancePeriod]);
-
   const performance = useMemo(
     () =>
       computeInsightsFromPosts(
@@ -680,33 +620,17 @@ export default function CreatorDetailClient(props: {
       ),
     [performancePosts, profile.followers]
   );
-
   const defaultProfilePhoto = "/image/default-kol-avatar.png";
   const photoSrc = proxied(profile.photoUrl) || defaultProfilePhoto;
   const followingText =
     profile.following !== null ? formatNumber(profile.following) : "-";
-
-  // Top 5 ikut periode aktif dan diurutkan berdasarkan total engagement.
+  // Gunakan hasil Top 5 dari pipeline/database. Jangan menghitung ulang di
+  // frontend karena binary thumbnail hanya disimpan untuk post tersebut.
   const topPosts = useMemo(() => {
-    const engagement = (post: Post) =>
-      Math.max(0, post.likes ?? 0) +
-      Math.max(0, post.comments ?? 0) +
-      Math.max(0, post.shares ?? 0) +
-      Math.max(0, post.saves ?? 0) +
-      Math.max(0, post.reposts ?? 0);
-
-    return [...performancePosts]
-      .sort((a, b) => {
-        const difference = engagement(b) - engagement(a);
-        if (difference !== 0) return difference;
-
-        return (
-          new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
-        );
-      })
+    return posts
+      .filter((post) => post.isTopContent === true)
       .slice(0, 5);
-  }, [performancePosts]);
-
+  }, [posts]);
   const handleExportPdf = async () => {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -733,11 +657,9 @@ export default function CreatorDetailClient(props: {
       .sort((a, b) => {
         const difference = engagement(b) - engagement(a);
         if (difference !== 0) return difference;
-
         return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
       })
       .slice(0, 5);
-
     const drawBorder = () => {
       doc.setDrawColor(221, 226, 232);
       doc.setLineWidth(0.35);
@@ -745,7 +667,6 @@ export default function CreatorDetailClient(props: {
       doc.setFillColor(...brown);
       doc.roundedRect(8, 6, pageWidth - 16, 3, 2, 2, "F");
     };
-
     drawBorder();
     if (logo) doc.addImage(logo, "PNG", pageWidth - 65, 10, 48, 25, undefined, "FAST");
     doc.setTextColor(...black);
@@ -758,7 +679,6 @@ export default function CreatorDetailClient(props: {
     doc.setFontSize(9);
     doc.text(`@${profile.username} · ${profile.socialMedia}`, left, 36);
     doc.text(`Last updated: ${profile.lastScrapedAt ? formatDate(profile.lastScrapedAt) : "-"}`, left, 42);
-
     const cards = [
       ["AVG. VIEWS", number(allPerformance.avgViews)],
       ["AVG. BRAND VIEWS", number(profile.averageViewBrand)],
@@ -784,7 +704,6 @@ export default function CreatorDetailClient(props: {
       doc.setFontSize(13);
       doc.text(value, x + 3, 67);
     });
-
     const metricChart = [
       ["Likes", allPerformance.avgLikes],
       ["Comments", allPerformance.avgComments],
@@ -813,7 +732,6 @@ export default function CreatorDetailClient(props: {
       doc.setFont("helvetica", "bold");
       doc.text(number(value), left + 104, chartY + 4);
     });
-
     const chartPosts = allTopPosts;
     const contentMax = Math.max(1, ...chartPosts.map(engagement));
     const chartX = 152;
@@ -847,7 +765,6 @@ export default function CreatorDetailClient(props: {
       doc.setFontSize(8);
       doc.text("No content data available.", chartX, 94);
     }
-
     const drawTopicBox = (title: string, value: string, x: number) => {
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(210, 218, 228);
@@ -864,7 +781,6 @@ export default function CreatorDetailClient(props: {
     };
     drawTopicBox("TOP HASHTAGS", profile.topHashtags.map((item) => `#${item.tag} (${item.count})`).join("   "), left);
     drawTopicBox("TOP MENTIONS", profile.topMentions.map((item) => `@${item.mention} (${item.count})`).join("   "), 153);
-
     doc.addPage();
     drawBorder();
     doc.setTextColor(...black);
@@ -874,7 +790,6 @@ export default function CreatorDetailClient(props: {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.text("Selected from Data All by highest total engagement", left, 26);
-
     autoTable(doc, {
       startY: 32,
       head: [["No.", "Posted At", "Caption", "Likes", "Comments", "Views", "Shares", "Saves", "Reposts", "Content URL"]],
@@ -909,7 +824,6 @@ export default function CreatorDetailClient(props: {
       margin: { left, right: pageWidth - right, top: 12, bottom: 18 },
       didDrawPage: drawBorder,
     });
-
     const totalPages = doc.getNumberOfPages();
     for (let page = 1; page <= totalPages; page += 1) {
       doc.setPage(page);
@@ -921,11 +835,9 @@ export default function CreatorDetailClient(props: {
       doc.text(`Creator Analytics | @${profile.username}`, left, pageHeight - 9);
       doc.text(`Page ${page} of ${totalPages}`, right, pageHeight - 9, { align: "right" });
     }
-
     const safeName = profile.username.replace(/[^a-z0-9_-]+/gi, "-");
     doc.save(`Creator-Detail-${safeName || profile.id}.pdf`);
   };
-
   return (
     <DefaultLayout>
       <div className="space-y-6">
@@ -939,7 +851,6 @@ export default function CreatorDetailClient(props: {
               onError={(event) => {
                 const image = event.currentTarget;
                 const rawUrl = String(profile.photoUrl ?? "").trim();
-
                 /*
                  * Untuk URL CDN lama: jika proxy gagal, coba URL asli
                  * satu kali sebelum memakai avatar default.
@@ -953,7 +864,6 @@ export default function CreatorDetailClient(props: {
                   image.src = rawUrl;
                   return;
                 }
-
                 if (!image.src.endsWith(defaultProfilePhoto)) {
                   image.src = defaultProfilePhoto;
                 }
@@ -969,7 +879,6 @@ export default function CreatorDetailClient(props: {
                 · {profile.socialMedia}
               </span>
             </p>
-
             <div className="mt-4 flex gap-6 text-sm">
               <span className="text-slate-400">
                 POSTS{" "}
@@ -977,14 +886,12 @@ export default function CreatorDetailClient(props: {
                   {formatNumber(profile.totalPost)}
                 </span>
               </span>
-
               <span className="text-slate-400">
                 FOLLOWERS{" "}
                 <span className="font-bold text-slate-800">
                   {formatNumber(profile.followers)}
                 </span>
               </span>
-
               <span className="text-slate-400">
                 FOLLOWING{" "}
                 <span className="font-bold text-slate-800">
@@ -994,7 +901,6 @@ export default function CreatorDetailClient(props: {
             </div>
           </div>
         </section>
-
         {/* User Performance */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <div className="flex flex-col gap-4">
@@ -1006,12 +912,10 @@ export default function CreatorDetailClient(props: {
                 Calculated from {performancePosts.length} stored contents
               </p>
             </div>
-
             <div className="overflow-x-auto">
               <div className="inline-flex min-w-max gap-1 rounded-xl border border-[#F0D8BA] bg-[#FBF4EB] p-1">
                 {PERFORMANCE_PERIODS.map((period) => {
                   const active = performancePeriod === period.value;
-
                   return (
                     <button
                       key={period.value}
@@ -1031,7 +935,6 @@ export default function CreatorDetailClient(props: {
               </div>
             </div>
           </div>
-
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard
               label="Average Likes"
@@ -1039,35 +942,30 @@ export default function CreatorDetailClient(props: {
               tint="text-rose-500"
               icon={<Heart className="h-5 w-5" />}
             />
-
             <MetricCard
               label="Average Comments"
               value={formatNumber(performance.avgComments)}
               tint="text-emerald-500"
               icon={<MessageCircle className="h-5 w-5" />}
             />
-
             <MetricCard
               label="Average Shares"
               value={formatNumber(performance.avgShares)}
               tint="text-indigo-500"
               icon={<Share2 className="h-5 w-5" />}
             />
-
             <MetricCard
               label="Average Saves"
               value={formatNumber(performance.avgSaves)}
               tint="text-amber-500"
               icon={<Bookmark className="h-5 w-5" />}
             />
-
             <MetricCard
               label="Average Reposts"
               value={formatNumber(performance.avgReposts)}
               tint="text-violet-500"
               icon={<Repeat2 className="h-5 w-5" />}
             />
-
             {/* Database fixed metrics */}
             <MetricCard
               label="Average Views"
@@ -1075,16 +973,13 @@ export default function CreatorDetailClient(props: {
               tint="text-sky-500"
               icon={<Eye className="h-5 w-5" />}
             />
-
             <MetricCard
               label="Average Brand Views"
               value={formatNumber(profile.averageViewBrand)}
               tint="text-blue-500"
               icon={<Eye className="h-5 w-5" />}
             />
-
             {/* Database metrics */}
-
             <MetricCard
               label="ER by Followers"
               value={`${performance.erFollowers.toFixed(2)}%`}
@@ -1092,14 +987,11 @@ export default function CreatorDetailClient(props: {
               icon={<TrendingUp className="h-5 w-5" />}
               info="
 Formula:
-
 (avg likes + avg comments + avg shares + avg saves + avg reposts)
 ÷ followers × 100
-
 Calculation follows the selected period.
 "
             />
-
             <MetricCard
               label="ER by Views"
               value={`${performance.erViews.toFixed(2)}%`}
@@ -1107,17 +999,13 @@ Calculation follows the selected period.
               icon={<Eye className="h-5 w-5" />}
               info="
 Formula:
-
 (avg likes + avg comments + avg shares + avg saves + avg reposts)
 ÷ avg views × 100
-
 Calculation only uses content that has view data.
-
 Only video/reels posts with available views
 inside the selected period are used.
 "
             />
-
             <MetricCard
               label="ER by TalentHub"
               value={`${performance.erTalenthub.toFixed(2)}%`}
@@ -1131,7 +1019,6 @@ The calculation is not multiplied by 100.
 Calculation follows the selected period.
 "
             />
-
             <MetricCard
               label="Total Posts benchmarking"
               value={formatNumber(performancePosts.length)}
@@ -1139,20 +1026,17 @@ Calculation follows the selected period.
               icon={<Users className="h-5 w-5" />}
             />
           </div>
-
           {profile.lastScrapedAt ? (
             <p className="mt-4 flex items-center gap-1 text-xs text-emerald-500">
               ✓ Last Updated: {formatDate(profile.lastScrapedAt)}
             </p>
           ) : null}
         </section>
-
         {/* Content — hashtags & mentions moved in here, full width so thumbnails can be bigger */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-8">
           <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold">
             📊 Content
           </h2>
-
           <div className="grid gap-6 xl:grid-cols-2">
             <TagListCard
               title={`Top ${profile.topHashtags.length} Hashtags`}
@@ -1169,19 +1053,15 @@ Calculation follows the selected period.
               variant="mention"
             />
           </div>
-
           {profile.lastScrapedAt ? (
             <p className="mt-4 flex items-center gap-1 text-xs text-emerald-500">
               ✓ Last Updated: {formatDate(profile.lastScrapedAt)}
             </p>
           ) : null}
-
           <div className="mt-10">
             <h3 className="mb-1 text-xl font-bold">Top 5 Contents</h3>
             <p className="mb-5 text-sm text-slate-400">
-              {performancePeriod === "all"
-                ? "Top content from all stored posts"
-                : `Top content from the last ${performancePeriod} days`}
+              Top content berdasarkan hasil analisis terakhir
             </p>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {topPosts.map((post) => (
@@ -1199,7 +1079,6 @@ Calculation follows the selected period.
             </div>
           </div>
         </section>
-
         <div className="flex justify-end">
           <button
             type="button"
