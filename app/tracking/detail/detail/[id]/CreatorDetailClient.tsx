@@ -165,7 +165,7 @@ function formatOptionalMetric(value: number | null | undefined): string {
   }
   return formatNumber(value);
 }
-// Instagram sends -1 (instead of a real count) when the creator has hidden
+// Instagram sends -1 (instead of a real count) when creator has hidden
 // the like count on that post. Treat any negative value as "hidden", not
 // as an actual number, so we never render a raw "-1" to the user.
 function isHiddenCount(value: number): boolean {
