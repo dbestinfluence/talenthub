@@ -16,7 +16,7 @@ async function authorize() {
   return session;
 }
 
-// ================= GET =================
+// ================= GET ================
 export async function GET(request: Request) {
   const session = await authorize();
 
