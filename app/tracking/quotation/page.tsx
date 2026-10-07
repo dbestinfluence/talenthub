@@ -164,7 +164,7 @@ const handleStartProject = async () => {
           />
 
           <FieldBox
-            label="PIC"
+            label="Project PIC"
             value={projectDetail.pic}
           />
 

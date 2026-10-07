@@ -36,6 +36,11 @@ export default function InvoiceSection({
   const [invoiceTaxRateInput, setInvoiceTaxRateInput] = useState(() => String(initialInvoiceTaxRate));
   const [savedInvoiceTaxRate, setSavedInvoiceTaxRate] = useState(initialInvoiceTaxRate);
   const [savingInvoiceTaxRate, setSavingInvoiceTaxRate] = useState(false);
+  const [invoiceNoInput, setInvoiceNoInput] = useState(() => String(projectDetail?.invoiceNo ?? ""));
+  const [savedInvoiceNo, setSavedInvoiceNo] = useState(() => String(projectDetail?.invoiceNo ?? ""));
+  const [poNoInput, setPoNoInput] = useState(() => String(projectDetail?.poNo ?? ""));
+  const [savedPoNo, setSavedPoNo] = useState(() => String(projectDetail?.poNo ?? ""));
+  const [savingDocumentField, setSavingDocumentField] = useState<"invoice" | "po" | null>(null);
   const invoiceTaxRate = Number(invoiceTaxRateInput);
   const invoiceTaxRateIsValid = invoiceTaxRateInput.trim() !== ""
     && Number.isFinite(invoiceTaxRate)
@@ -56,6 +61,53 @@ export default function InvoiceSection({
     setInvoiceTaxRateInput(String(nextRate));
     setSavedInvoiceTaxRate(nextRate);
   }, [projectDetail?.id, projectDetail?.invoiceTaxRate, projectDetail?.taxRate]);
+
+  useEffect(() => {
+    const nextInvoiceNo = String(projectDetail?.invoiceNo ?? "");
+    const nextPoNo = String(projectDetail?.poNo ?? "");
+    setInvoiceNoInput(nextInvoiceNo);
+    setSavedInvoiceNo(nextInvoiceNo);
+    setPoNoInput(nextPoNo);
+    setSavedPoNo(nextPoNo);
+  }, [projectDetail?.id, projectDetail?.invoiceNo, projectDetail?.poNo]);
+
+  const saveDocumentField = async (field: "invoice" | "po") => {
+    if (savingDocumentField) return;
+    const value = (field === "invoice" ? invoiceNoInput : poNoInput).trim();
+    const savedValue = field === "invoice" ? savedInvoiceNo : savedPoNo;
+    if (!value) {
+      await showAlertValidationError(`${field === "invoice" ? "Invoice No" : "PurchaseOrder No"} is required.`);
+      if (field === "invoice") setInvoiceNoInput(savedInvoiceNo);
+      else setPoNoInput(savedPoNo);
+      return;
+    }
+    if (value === savedValue) return;
+
+    setSavingDocumentField(field);
+    try {
+      const response = await fetch(`/api/tracking?id=${projectDetail?.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(field === "invoice" ? { prj_invoiceno: value } : { prj_po_no: value }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Failed to update document number.");
+      if (field === "invoice") {
+        setInvoiceNoInput(value);
+        setSavedInvoiceNo(value);
+      } else {
+        setPoNoInput(value);
+        setSavedPoNo(value);
+      }
+      await showSuccess("Document number updated", `${field === "invoice" ? "Invoice No" : "PurchaseOrder No"} has been saved.`);
+    } catch (error) {
+      if (field === "invoice") setInvoiceNoInput(savedInvoiceNo);
+      else setPoNoInput(savedPoNo);
+      await showAlertValidationError(error instanceof Error ? error.message : "Failed to update document number.");
+    } finally {
+      setSavingDocumentField(null);
+    }
+  };
 
   const saveInvoiceTaxRate = async () => {
     if (readOnly || savingInvoiceTaxRate) return;
@@ -79,7 +131,7 @@ export default function InvoiceSection({
       if (!response.ok) throw new Error(result.error ?? "Failed to update Invoice PPN.");
 
       setSavedInvoiceTaxRate(invoiceTaxRate);
-      await showSuccess("Invoice PPN updated", `Invoice tax rate has been updated to ${invoiceTaxRate}%.`);
+      await showSuccess("Invoice PPN updated", `The invoice PPN rate has been updated to ${invoiceTaxRate}%.`);
     } catch (error) {
       setInvoiceTaxRateInput(String(savedInvoiceTaxRate));
       await showAlertValidationError(error instanceof Error ? error.message : "Failed to update Invoice PPN.");
@@ -88,8 +140,10 @@ export default function InvoiceSection({
     }
   };
   const payment = projectDetail?.payment;
-  const getFileName = () =>
-    `Invoice_${projectDetail?.code ?? projectDetail?.name ?? "Project"}.pdf`;
+  const getFileName = () => {
+    const invoiceNo = invoiceNoInput.trim().replace(/[^a-z0-9_.-]+/gi, "-");
+    return `Invoice_${invoiceNo || projectDetail?.name || "Project"}.pdf`;
+  };
 
   const createInvoicePdf = async () => {
     const companyLogo = await loadCompanyLogo();
@@ -140,39 +194,69 @@ export default function InvoiceSection({
       doc.setFont("helvetica", "normal");
       doc.text(value || "-", numberBoxX + numberBoxWidth / 2, y + 8, { align: "center" });
     };
-    numberBox("TRANSACTION NO", String(projectDetail?.code ?? "-"), 17);
-    numberBox("INVOICE NO", String(projectDetail?.invoiceNo ?? "-"), 31);
+    numberBox("PURCHASEORDER NO", poNoInput.trim() || "-", 17);
+    numberBox("INVOICE NO", invoiceNoInput.trim() || "-", 31);
     numberBox("QUOTATION NO", String(projectDetail?.quotationNo ?? "-"), 45);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.text("Invoice To", 8, 33);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    const invoiceTo = [
-      String(projectDetail?.brand ?? "-").toUpperCase(),
-      String(projectDetail?.brandPic ?? "-"),
-      String(projectDetail?.brandEmail ?? "-"),
-      String(projectDetail?.brandAddress ?? "-"),
-      String(projectDetail?.brandContact ?? "-"),
-    ];
-    invoiceTo.forEach((line, index) =>
-      doc.text(doc.splitTextToSize(line || "-", 82), 8, 38 + index * 5)
-    );
+    const recipientBrand = String(projectDetail?.brand ?? "").trim().toUpperCase() || "-";
+    const recipientPic = String(projectDetail?.brandPic ?? "").trim();
+    const recipientEmail = String(projectDetail?.brandEmail ?? "").trim();
+    const recipientPhone = String(projectDetail?.brandContact ?? "").trim();
+    const recipientAddress = String(projectDetail?.brandAddress ?? "").trim();
+    let invoiceToY = 38;
 
-    const fromX = 179;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.text("Date", 157, 28);
-    doc.text(formattedDate, right, 28, { align: "right" });
     doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(recipientBrand, 8, invoiceToY);
+    invoiceToY += 5;
+
     doc.setFontSize(8.5);
-    doc.text("From", fromX, 36, { align: "center" });
+    const recipientDetails = [
+      { label: "PIC", value: recipientPic },
+      { label: "Email", value: recipientEmail },
+      { label: "Phone", value: recipientPhone },
+      { label: "Address", value: recipientAddress },
+    ].filter((detail) => detail.value);
+
+    recipientDetails.forEach(({ label, value }) => {
+      doc.setFont("helvetica", "bold");
+      doc.text(label, 8, invoiceToY);
+      doc.text(":", 21, invoiceToY);
+      doc.setFont("helvetica", "normal");
+      const lines = doc.splitTextToSize(value, 66);
+      doc.text(lines, 24, invoiceToY);
+      invoiceToY += Math.max(1, lines.length) * 4 + 1;
+    });
+
+    const headerLabelX = 154;
+    const headerValueX = right;
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("Date", headerLabelX, 28);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.text(companyName, fromX, 41, { align: "center" });
-    const companyAddressLines = doc.splitTextToSize(companyAddress, 56).slice(0, 3);
-    companyAddressLines.forEach((line: string, index: number) => doc.text(line, fromX, 48 + index * 5, { align: "center" }));
+    doc.text(formattedDate, headerValueX, 28, { align: "right" });
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(headerLabelX, 32, headerValueX, 32);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("From", headerLabelX, 38);
+    const companyNameLines = doc.splitTextToSize(companyName, 34).slice(0, 2);
+    companyNameLines.forEach((line: string, index: number) => {
+      doc.text(line, headerValueX, 38 + index * 4, { align: "right" });
+    });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    const companyAddressY = 44 + Math.max(0, companyNameLines.length - 1) * 4;
+    const companyAddressLines = doc.splitTextToSize(companyAddress, 40).slice(0, 3);
+    companyAddressLines.forEach((line: string, index: number) => {
+      doc.text(line, headerValueX, companyAddressY + index * 4, { align: "right" });
+    });
 
     const invoiceRows = creators.map((creator, index) => [
       index + 1,
@@ -181,8 +265,8 @@ export default function InvoiceSection({
       formatRupiah(creator.total),
     ]);
     autoTable(doc, {
-      startY: 70,
-      head: [["No", "Description", "Statement Of Work", "Amount"]],
+      startY: Math.max(70, invoiceToY + 4),
+      head: [["No.", "Description", "Statement of Work", "Amount"]],
       body: invoiceRows,
       theme: "grid",
       headStyles: { fillColor: [250, 224, 210], textColor: black, fontStyle: "bold", fontSize: 9, halign: "center", lineColor: black, lineWidth: 0.25, minCellHeight: 6 },
@@ -207,7 +291,7 @@ export default function InvoiceSection({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     const paymentY = y + 5;
-    doc.text("Payment Methode", 8, paymentY);
+    doc.text("Payment Method", 8, paymentY);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.text(`Bank Name     : ${payment?.bank ?? "-"}`, 8, paymentY + 5);
@@ -246,7 +330,7 @@ export default function InvoiceSection({
     const footerY = y + 34;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("Terms and Condition", 8, footerY);
+    doc.text("Terms and Conditions", 8, footerY);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.text(doc.splitTextToSize(
@@ -266,7 +350,13 @@ export default function InvoiceSection({
     return doc;
   };
 
-  const handleExportPdf = async () => (await createInvoicePdf()).save(getFileName());
+  const handleExportPdf = async () => {
+    if (!invoiceNoInput.trim() || !poNoInput.trim()) {
+      await showAlertValidationError("Complete Invoice No and PurchaseOrder No before exporting the invoice.");
+      return;
+    }
+    (await createInvoicePdf()).save(getFileName());
+  };
 
   const sendInvoicePdf = async (pdf: Blob, filename: string) => {
     if (!projectDetail?.id) {
@@ -322,6 +412,12 @@ export default function InvoiceSection({
       <div>
         <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Invoice</h2>
         <p className="text-sm text-slate-700">Creator and payment details for this project.</p>
+      </div>
+
+      <div className="mt-6 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+        <DocumentField label="PurchaseOrder No" value={poNoInput} readOnly={savingDocumentField !== null} onChange={setPoNoInput} onSave={() => void saveDocumentField("po")} />
+        <DocumentField label="Invoice No" value={invoiceNoInput} readOnly={savingDocumentField !== null} onChange={setInvoiceNoInput} onSave={() => void saveDocumentField("invoice")} />
+        <DocumentField label="Quotation No" value={String(projectDetail?.quotationNo ?? "")} readOnly onChange={() => undefined} onSave={() => undefined} />
       </div>
 
       <div className="-mx-4 mt-8 w-auto overflow-x-auto rounded-xl border border-slate-200 touch-pan-x sm:mx-0 sm:w-full">
@@ -387,6 +483,36 @@ export default function InvoiceSection({
 
       {isPreviewOpen && previewUrl && <div role="dialog" aria-modal="true" aria-label="Invoice PDF preview" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onClick={() => setIsPreviewOpen(false)}><div className="flex h-[72vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between border-b border-slate-200 px-5 py-3"><div className="min-w-0"><p className="text-sm font-bold text-slate-900">Invoice PDF Preview</p><p className="truncate text-xs text-slate-500">{uploadedPdf?.name}</p></div><button type="button" onClick={() => setIsPreviewOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Close</button></div><iframe title="Invoice PDF preview" src={previewUrl} className="min-h-0 flex-1 bg-slate-100" /></div></div>}
     </section>
+  );
+}
+
+function DocumentField({
+  label,
+  value,
+  readOnly,
+  onChange,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  readOnly: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <label className="text-sm font-semibold text-slate-700">
+      {label}
+      <input
+        value={value}
+        maxLength={100}
+        readOnly={readOnly}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onSave}
+        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-4 read-only:cursor-default read-only:bg-slate-100"
+        placeholder={`Enter ${label}`}
+      />
+    </label>
   );
 }
 

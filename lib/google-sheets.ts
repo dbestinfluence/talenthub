@@ -170,7 +170,7 @@ function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
 async function loadProject(projectId: number) {
   const project = await prisma.trs_project.findUnique({
     where: { prj_id: projectId },
-    include: { mst_brand: true, dtl_project: { include: { mst_creators: true, mst_sow: true }, orderBy: { drf_id: 'asc' } } },
+    include: { mst_brand: true, dtl_project: { include: { mst_creators: true, mst_sow: true }, orderBy: [{ drf_sort_order: 'asc' }, { drf_id: 'asc' }] } },
   });
   if (!project) throw new Error('Project was not found');
   return project;

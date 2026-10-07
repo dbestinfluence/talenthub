@@ -47,9 +47,10 @@ export async function GET(request: Request) {
         mst_sow: true,
         detail_report: { select: { id: true } },
       },
-      orderBy: {
-        drf_id: "asc",
-      },
+      orderBy: [
+        { drf_sort_order: "asc" },
+        { drf_id: "asc" },
+      ],
     });
 
     type ProjectDetail = (typeof details)[number];
@@ -344,21 +345,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "SOW rows can only be added while the project is Draft" }, { status: 409 });
     }
 
-    const created = await prisma.dtl_project.create({
-      data: {
-        drf_projectid: source.drf_projectid,
-        drf_creatorid: source.drf_creatorid,
-        drf_platform: source.drf_platform,
-        drf_sow: null,
-        drf_qty: null,
-        drf_rate: source.drf_rate,
-        drf_markup_price: source.drf_markup_price,
-        drf_status: 0,
-        creaby: session.user.name ?? "admin",
-        creadate: new Date(),
-        modiby: session.user.name ?? "admin",
-        modidate: new Date(),
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const sourceOrder = source.drf_sort_order;
+      await tx.dtl_project.updateMany({
+        where: {
+          drf_projectid: source.drf_projectid,
+          drf_sort_order: { gt: sourceOrder },
+        },
+        data: { drf_sort_order: { increment: 1 } },
+      });
+
+      return tx.dtl_project.create({
+        data: {
+          drf_projectid: source.drf_projectid,
+          drf_creatorid: source.drf_creatorid,
+          drf_platform: source.drf_platform,
+          drf_sort_order: sourceOrder + 1,
+          drf_sow: null,
+          drf_qty: null,
+          drf_rate: source.drf_rate,
+          drf_markup_price: source.drf_markup_price,
+          drf_status: 0,
+          creaby: session.user.name ?? "admin",
+          creadate: new Date(),
+          modiby: session.user.name ?? "admin",
+          modidate: new Date(),
+        },
+      });
     });
 
     return NextResponse.json(created, { status: 201 });

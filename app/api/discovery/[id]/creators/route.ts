@@ -68,7 +68,14 @@ export async function POST(
     }
 
     // 5. Siapkan data untuk insert
-    const detailData = newCreators.map((creator: any) => {
+    const lastDetail = await prisma.dtl_project.findFirst({
+      where: { drf_projectid: projectId },
+      orderBy: [{ drf_sort_order: "desc" }, { drf_id: "desc" }],
+      select: { drf_sort_order: true },
+    });
+    const nextOrder = (lastDetail?.drf_sort_order ?? 0) + 1;
+
+    const detailData = newCreators.map((creator: any, index: number) => {
       const creatorDatabaseId = creator.no; // field "no" berisi ID asli dari mst_creators
 
       if (!creatorDatabaseId) {
@@ -81,6 +88,7 @@ export async function POST(
         drf_projectid: projectId,
         drf_creatorid: parseInt(creatorDatabaseId),
         drf_platform: creator.social_media ?? creator.platform ?? null,
+        drf_sort_order: nextOrder + index,
         drf_sow: null,
         drf_qty: null,
         drf_rate: null,

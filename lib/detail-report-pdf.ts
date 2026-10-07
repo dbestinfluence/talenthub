@@ -478,7 +478,7 @@ export async function createDetailReportPdf(payload: DetailReportPayload) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(12);
   doc.text(`Project ${payload.project.code}`, 18, 145);
-  doc.text(`Prepared by ${payload.project.pic || companyName}`, 18, 154);
+  doc.text(`Prepared by ${companyName}`, 18, 154);
   if (companyLogo) doc.addImage(companyLogo, 'PNG', width - 91, 124, 72, 38, undefined, 'FAST');
 
   page++;

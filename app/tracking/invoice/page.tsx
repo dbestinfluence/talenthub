@@ -197,7 +197,7 @@ export default function InvoicePage() {
           />
 
           <FieldBox
-            label="PIC"
+            label="Project PIC"
             value={projectDetail.pic}
           />
 

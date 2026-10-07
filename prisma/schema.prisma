@@ -114,6 +114,7 @@ model dtl_project {
   drf_creatorid       Int
   drf_markup_price    Decimal?       @db.Decimal(12, 2)
   drf_platform        String?        @db.VarChar(20)
+  drf_sort_order      Int            @default(0)
   detail_report       detail_report?
   mst_creators        mst_creators   @relation(fields: [drf_creatorid], references: [id], map: "fk_dtl_project_creator")
   mst_sow             mst_sow?       @relation(fields: [drf_sow], references: [sow_id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dtl_project_to_sow")
@@ -161,15 +162,17 @@ model mst_cities {
 }
 
 model mst_dbest {
-  bst_id      Int           @id @default(autoincrement())
-  bst_nama    String?       @db.VarChar(100)
-  bst_alamat  String?       @db.VarChar(100)
-  bst_status  Int?          @default(1)
-  creaby      String?       @db.VarChar(20)
-  creadate    DateTime?     @default(now()) @db.Timestamp(6)
-  modiby      String?       @db.VarChar(20)
-  modidate    DateTime?     @default(now()) @db.Timestamp(6)
-  trs_project trs_project[]
+  bst_id             Int           @id @default(autoincrement())
+  bst_nama           String?       @db.VarChar(100)
+  bst_alamat         String?       @db.VarChar(100)
+  bst_approver_name  String?       @db.VarChar(100)
+  bst_approver_title String?       @db.VarChar(100)
+  bst_status         Int?          @default(1)
+  creaby             String?       @db.VarChar(20)
+  creadate           DateTime?     @default(now()) @db.Timestamp(6)
+  modiby             String?       @db.VarChar(20)
+  modidate           DateTime?     @default(now()) @db.Timestamp(6)
+  trs_project        trs_project[]
 }
 
 model mst_general_filters {
@@ -185,6 +188,7 @@ model trs_project {
   prj_nama             String        @db.VarChar(100)
   prj_quotationno      String?       @db.VarChar(100)
   prj_invoiceno        String?       @db.VarChar(100)
+  prj_po_no            String?       @db.VarChar(100)
   prj_dstartdate       DateTime      @db.Date
   prj_denddate         DateTime      @db.Date
   prj_qstartdate       DateTime?     @db.Date

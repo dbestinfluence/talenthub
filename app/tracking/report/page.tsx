@@ -162,7 +162,7 @@ const handleGenerateInvoice = async () => {
           />
 
           <FieldBox
-            label="PIC"
+            label="Project PIC"
             value={projectDetail.pic}
           />
 

@@ -39,6 +39,9 @@ export default function QuotationSection({
   const [taxRateInput, setTaxRateInput] = useState(() => String(initialTaxRate));
   const [savedTaxRate, setSavedTaxRate] = useState(initialTaxRate);
   const [savingTaxRate, setSavingTaxRate] = useState(false);
+  const [quotationNoInput, setQuotationNoInput] = useState(() => String(projectDetail?.quotationNo ?? ""));
+  const [savedQuotationNo, setSavedQuotationNo] = useState(() => String(projectDetail?.quotationNo ?? ""));
+  const [savingQuotationNo, setSavingQuotationNo] = useState(false);
   const taxRate = Number(taxRateInput);
   const taxRateIsValid = taxRateInput.trim() !== "" && Number.isFinite(taxRate) && taxRate >= 0 && taxRate <= 100;
   const taxSummary = calculateTaxSummary(Number(projectDetail?.subtotal ?? 0), taxRate);
@@ -53,6 +56,42 @@ export default function QuotationSection({
     setTaxRateInput(String(nextTaxRate));
     setSavedTaxRate(nextTaxRate);
   }, [projectDetail?.id, projectDetail?.taxRate]);
+
+  useEffect(() => {
+    const nextQuotationNo = String(projectDetail?.quotationNo ?? "");
+    setQuotationNoInput(nextQuotationNo);
+    setSavedQuotationNo(nextQuotationNo);
+  }, [projectDetail?.id, projectDetail?.quotationNo]);
+
+  const saveQuotationNo = async () => {
+    if (savingQuotationNo) return;
+    const nextQuotationNo = quotationNoInput.trim();
+    if (!nextQuotationNo) {
+      await showAlertValidationError("Quotation No is required.");
+      setQuotationNoInput(savedQuotationNo);
+      return;
+    }
+    if (nextQuotationNo === savedQuotationNo) return;
+
+    setSavingQuotationNo(true);
+    try {
+      const response = await fetch(`/api/tracking?id=${projectDetail?.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prj_quotationno: nextQuotationNo }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Failed to update Quotation No.");
+      setQuotationNoInput(nextQuotationNo);
+      setSavedQuotationNo(nextQuotationNo);
+      await showSuccess("Quotation No updated", `Quotation No has been saved as ${nextQuotationNo}.`);
+    } catch (error) {
+      setQuotationNoInput(savedQuotationNo);
+      await showAlertValidationError(error instanceof Error ? error.message : "Failed to update Quotation No.");
+    } finally {
+      setSavingQuotationNo(false);
+    }
+  };
 
   const saveTaxRate = async () => {
     if (readOnly || savingTaxRate) return false;
@@ -87,7 +126,7 @@ export default function QuotationSection({
 
       setSavedTaxRate(taxRate);
       setTaxRateInput(String(taxRate));
-      await showSuccess("PPN updated", `Tax rate has been updated to ${taxRate}%.`);
+      await showSuccess("PPN updated", `The PPN rate has been updated to ${taxRate}%.`);
       return true;
     } catch (error) {
       setTaxRateInput(String(savedTaxRate));
@@ -99,9 +138,7 @@ export default function QuotationSection({
   };
 
   const getQuotationFileName = () => {
-    const projectCode = String(projectDetail?.code ?? "").trim();
-    const quotationCode = projectCode.replace(/^TRS-/i, "QUO-");
-
+    const quotationCode = quotationNoInput.trim().replace(/[^a-z0-9_.-]+/gi, "-");
     return `${quotationCode || "QUO-PREVIEW"}.pdf`;
   };
 
@@ -157,8 +194,8 @@ export default function QuotationSection({
       doc.setFontSize(12);
       doc.text("Quotation For", contentLeft, 50);
 
-      const dateToFormat = projectDetail?.date
-        ? new Date(projectDetail.date)
+      const dateToFormat = projectDetail?.quotationStartDate
+        ? new Date(projectDetail.quotationStartDate)
         : new Date(); // Keep using new Date() as a fallback
       const formattedDate = dateToFormat.toLocaleDateString("en-GB", {
         day: "numeric",
@@ -168,18 +205,22 @@ export default function QuotationSection({
 
       doc.setFontSize(9);
 
+      const formatPeriodDate = (value: unknown) => {
+        const date = value ? new Date(String(value)) : null;
+        return date && !Number.isNaN(date.getTime())
+          ? date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+          : "-";
+      };
+      const projectPeriod = `${formatPeriodDate(projectDetail?.draftStartDate)} - ${formatPeriodDate(projectDetail?.draftEndDate)}`;
+
       // KIRI
       doc.setFont("helvetica", "normal");
       doc.text("Brand", contentLeft, 57);
-      doc.text("Contact Person", contentLeft, 63);
-      doc.text("Phone", contentLeft, 69);
-      doc.text("Project", contentLeft, 75);
+      doc.text("Period", contentLeft, 63);
+      doc.text("Project", contentLeft, 69);
       doc.text(`: ${String(projectDetail?.brand ?? "-").toUpperCase()}`, 44, 57);
-      const quotationContactName = String(projectDetail?.quotationPic ?? "").trim();
-      const quotationContactPhone = String(projectDetail?.quotationPicPhone ?? "").trim();
-      doc.text(`: ${quotationContactName || "-"}`, 44, 63);
-      doc.text(`: ${quotationContactPhone || "-"}`, 44, 69);
-      doc.text(`: ${String(projectDetail?.name ?? "-")}`, 44, 75);
+      doc.text(`: ${projectPeriod}`, 44, 63);
+      doc.text(`: ${String(projectDetail?.name ?? "-")}`, 44, 69);
 
       // KANAN
       const rightLabelX = 118;
@@ -187,13 +228,10 @@ export default function QuotationSection({
       const rightValueX = 150;
       doc.text("Date", rightLabelX, 57);
       doc.text("Quotation No", rightLabelX, 63);
-      doc.text("Transaction No", rightLabelX, 69);
       doc.text(":", rightColonX, 57);
       doc.text(":", rightColonX, 63);
-      doc.text(":", rightColonX, 69);
       doc.text(formattedDate, rightValueX, 57);
-      doc.text(String(projectDetail?.quotationNo ?? "-"), rightValueX, 63);
-      doc.text(String(projectDetail?.code ?? "-"), rightValueX, 69);
+      doc.text(quotationNoInput.trim() || "-", rightValueX, 63);
     };
 
     // Panggil kedua fungsi untuk halaman pertama
@@ -353,18 +391,18 @@ export default function QuotationSection({
     doc.text("Terms of Payment", contentLeft - 2, termsY);
 
     doc.text(
-      "1. The Payment Will be after campaign finish",
+      "1. Payment will be made after the campaign is completed.",
       contentLeft - 2,
       termsY + 6
     );
 
     doc.text(
-      "2. Due Date is 14 Days After Invoice is received",
+      "2. Payment is due within 14 days after the invoice is received.",
       contentLeft - 2,
       termsY + 12
     );
 
-    doc.text("Terms of Revision", contentLeft - 2, termsY + 23);
+    doc.text("Revision Terms", contentLeft - 2, termsY + 23);
 
     const revisionText = doc.splitTextToSize(
       "1. Maximum revision is 2x (two times). Additional revisions will be charged proportionally.",
@@ -373,7 +411,7 @@ export default function QuotationSection({
 
     doc.text(revisionText, contentLeft - 2, termsY + 29);
 
-    doc.text("Cancellation & Penalty Fee:", contentLeft - 2, termsY + 45);
+    doc.text("Cancellation & Penalty Fees:", contentLeft - 2, termsY + 45);
 
     const cancellationText = doc.splitTextToSize(
       "1. Cancellation fee after approval quotation by sign or email is 50% from total project amount.",
@@ -389,9 +427,9 @@ export default function QuotationSection({
     const signatureY = termsY + 30;
     const signatureWidth = contentRight - signatureX;
 
-    const col1 = 25;
-    const col2 = 50;
-    const col3 = signatureWidth - col1 - col2;
+    const col1 = signatureWidth / 3;
+    const col2 = signatureWidth / 3;
+    const col3 = signatureWidth / 3;
 
     const headerHeight = 7;
     const signHeight = 30;
@@ -450,8 +488,8 @@ export default function QuotationSection({
       nameY,
       { align: "center", maxWidth: col2 - 4 }
     );
-    doc.text("Lilik Sujieanto", signatureX + col1 + col2 + col3 / 2, nameY, { align: "center" });
-    doc.text("Director", signatureX + col1 + col2 + col3 / 2, nameY + 5, { align: "center" });
+    doc.text(String(projectDetail?.dbest?.approverName ?? "-").trim() || "-", signatureX + col1 + col2 + col3 / 2, nameY, { align: "center", maxWidth: col3 - 4 });
+    doc.text(String(projectDetail?.dbest?.approverTitle ?? "-").trim() || "-", signatureX + col1 + col2 + col3 / 2, nameY + 5, { align: "center", maxWidth: col3 - 4 });
 
     // =====================================================
     // 9. SAVE PDF
@@ -460,6 +498,14 @@ export default function QuotationSection({
   };
 
   const handleExportToPdf = async () => {
+    if (!quotationNoInput.trim()) {
+      await showAlertValidationError("Complete Quotation No before exporting the quotation.");
+      return;
+    }
+    if (!String(projectDetail?.dbest?.approverName ?? "").trim()) {
+      await showAlertValidationError("Configure the quotation approver in Master Data DBest before exporting.");
+      return;
+    }
     (await createQuotationPdf()).save(getQuotationFileName());
   };
 
@@ -522,9 +568,7 @@ export default function QuotationSection({
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-7">
       <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Creator List</h2>
-      <p className="text-sm text-slate-700">
-        Creators included in this quotation.
-      </p>
+      <p className="mt-1 text-sm text-slate-600">Creators included in this quotation.</p>
 
       {/* Show Entries */}
       <div className="mt-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -539,7 +583,38 @@ export default function QuotationSection({
   onView={onView}
 />
 
-<div className="mt-8 flex justify-end">
+      <div className="mt-8 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="w-full max-w-md rounded-xl border border-orange-200 bg-orange-50/70 p-4 sm:p-5">
+          <label htmlFor="quotation-no" className="mb-2 block text-sm font-semibold text-slate-800">
+            Quotation No
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              id="quotation-no"
+              value={quotationNoInput}
+              maxLength={100}
+              disabled={savingQuotationNo}
+              onChange={(event) => setQuotationNoInput(event.target.value)}
+              onBlur={() => void saveQuotationNo()}
+              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+              className="h-11 min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+              placeholder="Enter Quotation No"
+            />
+            <button
+              type="button"
+              disabled={savingQuotationNo || !quotationNoInput.trim() || quotationNoInput.trim() === savedQuotationNo}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void saveQuotationNo()}
+              className={`h-11 rounded-lg px-5 text-sm font-semibold text-white transition ${quotationNoInput.trim() === savedQuotationNo ? "cursor-default bg-emerald-500" : "bg-orange-500 hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"}`}
+            >
+              {savingQuotationNo ? "Saving..." : quotationNoInput.trim() === savedQuotationNo ? "Saved" : "Save"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Used on the quotation PDF and linked invoice.
+          </p>
+        </div>
+
   <div className="w-full max-w-[430px] rounded-xl border bg-yellow-50 p-4 sm:p-6">
 
     <Row
@@ -573,7 +648,7 @@ export default function QuotationSection({
     </div>
 
   </div>
-</div>
+      </div>
 
 <div className="mt-6 h-2 rounded-full bg-slate-300">
   <div className="h-2 w-1/3 rounded-full bg-slate-200" />

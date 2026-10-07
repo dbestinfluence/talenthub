@@ -95,7 +95,7 @@ export async function POST(
               <p>Thank you for your collaboration. Please find the quotation for the following project attached to this email.</p>
               <table style="width:100%;border-collapse:collapse;margin:24px 0;background:#f9fafb">
                 <tr><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;color:#6b7280">Project</td><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;font-weight:700">${projectName}</td></tr>
-                <tr><td style="padding:12px 16px;color:#6b7280">Quotation No.</td><td style="padding:12px 16px;font-weight:700">${quotationNumber}</td></tr>
+                <tr><td style="padding:12px 16px;color:#6b7280">Quotation No</td><td style="padding:12px 16px;font-weight:700">${quotationNumber}</td></tr>
               </table>
               <p>Please review the attached document. We are happy to help with any questions or requested adjustments.</p>
               <p style="margin-bottom:0">Best regards,<br><strong>D'BEST Influence</strong></p>

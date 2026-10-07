@@ -131,19 +131,16 @@ if (id) {
 
   const transactionNo = normalizeProjectNumber("TRS", project.prj_kode) || project.prj_kode;
   const quotationNo = project.prj_status >= 2
-    ? normalizeProjectNumber("QUO", project.prj_quotationno, transactionNo)
+    ? project.prj_quotationno?.trim() || normalizeProjectNumber("QUO", null, transactionNo)
     : "";
   const invoiceNo = project.prj_status >= 5
-    ? normalizeProjectNumber("INV", project.prj_invoiceno, transactionNo)
+    ? project.prj_invoiceno?.trim() || ""
     : "";
 
   const repairedNumbers = {
     ...(project.prj_kode !== transactionNo ? { prj_kode: transactionNo } : {}),
-    ...(project.prj_status >= 2 && project.prj_quotationno !== quotationNo
+    ...(project.prj_status >= 2 && !project.prj_quotationno?.trim()
       ? { prj_quotationno: quotationNo }
-      : {}),
-    ...(project.prj_status >= 5 && project.prj_invoiceno !== invoiceNo
-      ? { prj_invoiceno: invoiceNo }
       : {}),
   };
   if (Object.keys(repairedNumbers).length > 0) {
@@ -175,6 +172,7 @@ if (id) {
 
     quotationNo,
     invoiceNo,
+    poNo: project.prj_po_no ?? "",
     taxRate: Number(project.prj_tax_rate),
     invoiceTaxRate: Number(project.prj_invoice_tax_rate ?? project.prj_tax_rate),
     payment: project.mst_payment
@@ -185,7 +183,12 @@ if (id) {
         }
       : null,
     dbest: project.mst_dbest
-      ? { name: project.mst_dbest.bst_nama ?? "", address: project.mst_dbest.bst_alamat ?? "" }
+      ? {
+          name: project.mst_dbest.bst_nama ?? "",
+          address: project.mst_dbest.bst_alamat ?? "",
+          approverName: project.mst_dbest.bst_approver_name ?? "",
+          approverTitle: project.mst_dbest.bst_approver_title ?? "",
+        }
       : null,
 
     draftStartDate: project.prj_dstartdate,
@@ -425,7 +428,7 @@ export async function PUT(request: Request) {
 
       selectedPaymentId = payment.pyt_id;
       const transactionNo = normalizeProjectNumber("TRS", currentProject.prj_kode) || currentProject.prj_kode;
-      generatedInvoiceNo = normalizeProjectNumber("INV", currentProject.prj_invoiceno, transactionNo);
+      generatedInvoiceNo = currentProject.prj_invoiceno?.trim() || null;
       initialInvoiceTaxRate = Number(
         currentProject.prj_invoice_tax_rate ?? currentProject.prj_tax_rate,
       );
@@ -535,10 +538,13 @@ export async function PUT(request: Request) {
       updateData.prj_nama = body.prj_nama;
 
     if (body.prj_quotationno !== undefined)
-      updateData.prj_quotationno = body.prj_quotationno;
+      updateData.prj_quotationno = String(body.prj_quotationno).trim();
 
     if (body.prj_invoiceno !== undefined)
-      updateData.prj_invoiceno = body.prj_invoiceno;
+      updateData.prj_invoiceno = String(body.prj_invoiceno).trim();
+
+    if (body.prj_po_no !== undefined)
+      updateData.prj_po_no = String(body.prj_po_no).trim();
 
     if (body.prj_tax_rate !== undefined) {
       const taxRate = Number(body.prj_tax_rate);
@@ -592,7 +598,8 @@ export async function PUT(request: Request) {
         }
         const transactionNo = normalizeProjectNumber("TRS", currentProject.prj_kode) || currentProject.prj_kode;
         updateData.prj_kode = transactionNo;
-        updateData.prj_quotationno = normalizeProjectNumber("QUO", currentProject.prj_quotationno, transactionNo);
+        updateData.prj_quotationno = currentProject.prj_quotationno?.trim()
+          || normalizeProjectNumber("QUO", null, transactionNo);
       }
 
       // Finish hanya menandai akhir invoice; status utama tetap Invoice.

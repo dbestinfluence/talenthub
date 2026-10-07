@@ -88,7 +88,7 @@ async function getRows(projectId: number, detailIds: number[]) {
       ...(detailIds.length ? { drf_id: { in: detailIds } } : {}),
     },
     include: { mst_creators: true, mst_sow: true, detail_report: true },
-    orderBy: { drf_id: 'asc' },
+    orderBy: [{ drf_sort_order: 'asc' }, { drf_id: 'asc' }],
   });
 }
 

@@ -345,7 +345,7 @@ export const confirmGenerateInvoice = async (payments: PaymentOption[]) => {
               margin-top:5px;
             "
           >
-            Account number is required
+            Account No is required
           </div>
         </div>
 

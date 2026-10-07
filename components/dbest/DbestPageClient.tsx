@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { confirmDelete } from "@/lib/alert";
 
-type Dbest = { bst_id: number; bst_nama: string | null; bst_alamat: string | null; bst_status: number | null };
+type Dbest = { bst_id: number; bst_nama: string | null; bst_alamat: string | null; bst_approver_name: string | null; bst_approver_title: string | null; bst_status: number | null };
 
 export default function DbestPageClient() {
   const [items, setItems] = useState<Dbest[]>([]);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
+  const [approverName, setApproverName] = useState("");
+  const [approverTitle, setApproverTitle] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,14 +29,14 @@ export default function DbestPageClient() {
   };
 
   useEffect(() => { void load(); }, []);
-  const reset = () => { setEditingId(null); setName(""); setAddress(""); setMessage(""); };
+  const reset = () => { setEditingId(null); setName(""); setAddress(""); setApproverName(""); setApproverTitle(""); setMessage(""); };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!name.trim() || !address.trim()) return setMessage("Name and address are required.");
+    if (!name.trim() || !address.trim() || !approverName.trim() || !approverTitle.trim()) return setMessage("Company and approver data are required.");
     setSaving(true);
     try {
-      const response = await fetch(editingId ? `/api/dbest/${editingId}` : "/api/dbest", { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bst_nama: name, bst_alamat: address }) });
+      const response = await fetch(editingId ? `/api/dbest/${editingId}` : "/api/dbest", { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bst_nama: name, bst_alamat: address, bst_approver_name: approverName, bst_approver_title: approverTitle }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Failed to save DBest data");
       reset(); await load();
@@ -69,12 +71,14 @@ export default function DbestPageClient() {
         <div><h2 className="text-lg font-semibold text-slate-900">Form Data DBest</h2><p className="text-sm text-slate-500">Create or Update Data</p></div>
         <label className="block text-sm font-medium text-slate-700">Company Name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3" placeholder="DBest company name" /></label>
         <label className="block text-sm font-medium text-slate-700">Company Address<textarea value={address} onChange={(e) => setAddress(e.target.value)} maxLength={100} rows={4} className="mt-1 w-full resize-none rounded-lg border border-slate-300 px-3 py-2" placeholder="Company address" /></label>
+        <label className="block text-sm font-medium text-slate-700">Quotation Approver Name<input value={approverName} onChange={(e) => setApproverName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3" placeholder="Approver name" /></label>
+        <label className="block text-sm font-medium text-slate-700">Approver Title<input value={approverTitle} onChange={(e) => setApproverTitle(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3" placeholder="Director" /></label>
         {message ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{message}</div> : null}
         <div className="flex gap-3"><button disabled={saving} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-400">{saving ? "Saving..." : editingId ? "Update DBest" : "Add DBest"}</button><button type="button" onClick={reset} className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold">Reset</button></div>
       </form>
       <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">List of DBest Identities</h2><p className="mb-4 text-sm text-slate-500">{items.length} records</p>
-        {loading ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">Loading DBest data...</div> : items.length === 0 ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No DBest data available.</div> : <div className="space-y-3">{items.map((item) => <div key={item.bst_id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-slate-900">{item.bst_nama || "-"}</p><p className="mt-1 text-sm text-slate-500">{item.bst_alamat || "-"}</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setEditingId(item.bst_id); setName(item.bst_nama ?? ""); setAddress(item.bst_alamat ?? ""); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">Update</button><button type="button" onClick={() => void remove(item.bst_id)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Delete</button><button type="button" aria-label="Toggle DBest status" onClick={() => void toggle(item)} className={`relative h-7 w-14 rounded-full ${item.bst_status === 1 ? "bg-blue-500" : "bg-slate-300"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow ${item.bst_status === 1 ? "left-8" : "left-1"}`} /></button></div></div>)}</div>}
+        {loading ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">Loading DBest data...</div> : items.length === 0 ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No DBest data available.</div> : <div className="space-y-3">{items.map((item) => <div key={item.bst_id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-slate-900">{item.bst_nama || "-"}</p><p className="mt-1 text-sm text-slate-500">{item.bst_alamat || "-"}</p><p className="mt-1 text-sm text-slate-600">Approver: {item.bst_approver_name || "-"} · {item.bst_approver_title || "-"}</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setEditingId(item.bst_id); setName(item.bst_nama ?? ""); setAddress(item.bst_alamat ?? ""); setApproverName(item.bst_approver_name ?? ""); setApproverTitle(item.bst_approver_title ?? ""); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">Update</button><button type="button" onClick={() => void remove(item.bst_id)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Delete</button><button type="button" aria-label="Toggle DBest status" onClick={() => void toggle(item)} className={`relative h-7 w-14 rounded-full ${item.bst_status === 1 ? "bg-blue-500" : "bg-slate-300"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow ${item.bst_status === 1 ? "left-8" : "left-1"}`} /></button></div></div>)}</div>}
       </div>
     </div>
   </section>;

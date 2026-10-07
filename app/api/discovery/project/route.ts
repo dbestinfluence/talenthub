@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       });
 
       // Langkah B: Siapkan list data untuk tabel dtl_project
-      const detailData = selectedCreators.map((creator: any) => {
+      const detailData = selectedCreators.map((creator: any, index: number) => {
         // FIX: field ID asli dari GET /api/discovery bernama "no", bukan "id"
         const creatorDatabaseId = creator.no;
 
@@ -117,6 +117,7 @@ export async function POST(request: Request) {
           drf_projectid: newProject.prj_id,
           drf_creatorid: parseInt(creatorDatabaseId),
           drf_platform: creator.social_media ?? creator.platform ?? null,
+          drf_sort_order: index + 1,
           drf_sow: null,
           drf_qty: null,
           drf_rate: null,
