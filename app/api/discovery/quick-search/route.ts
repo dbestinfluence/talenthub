@@ -7,17 +7,15 @@ import {
   type RawPost,
   type RawProfile,
 } from "@/lib/apify";
-import {
-  checkIndonesianLocation,
-  classifyAccountCategory,
-} from "@/lib/gemini";
+import { checkIndonesianLocation, classifyAccountCategory } from "@/lib/gemini";
 import { persistCreatorProfile } from "@/lib/creator-processor";
 import { firstProfileImageUrl } from "@/lib/profile-image";
 import { prisma } from "@/lib/prisma";
 
-export const maxDuration = 280;
+export const maxDuration = 300;
 
 const QUICK_SEARCH_POST_LIMIT = 20;
+const QUICK_SEARCH_ENRICH_LIMIT = 10;
 const ENRICHMENT_CONCURRENCY = 1;
 
 function normalizeUsername(value: string): string {
@@ -49,16 +47,47 @@ function selectLatestPosts(
       return true;
     })
     .sort(
-      (a, b) =>
-        new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
+      (a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
     )
     .slice(0, QUICK_SEARCH_POST_LIMIT);
+}
+
+function initialPostScore(post: RawPost): number {
+  const likes = Number(post.likes ?? 0);
+  const comments = Number(post.comments ?? 0);
+  const views = Number(post.views ?? 0);
+
+  /*
+   * shares, saves, dan reposts belum tentu
+   * tersedia sebelum enrichPosts dijalankan.
+   *
+   * Views diberi bobot 1% supaya post dengan
+   * views besar tidak selalu mengalahkan post
+   * dengan engagement tinggi.
+   */
+  return likes + comments + views * 0.01;
+}
+
+function selectBestPosts(posts: RawPost[], limit: number): RawPost[] {
+  return [...posts]
+    .sort((a, b) => {
+      const scoreDifference = initialPostScore(b) - initialPostScore(a);
+
+      if (scoreDifference !== 0) {
+        return scoreDifference;
+      }
+
+      return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
+    })
+    .slice(0, limit);
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const username = normalizeUsername(String(body?.username ?? ""));
-  const socialMedia = String(body?.socialMedia ?? "").trim().toLowerCase();
+  const socialMedia = String(body?.socialMedia ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!username) {
     return NextResponse.json(
@@ -162,17 +191,28 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const selectedPosts = selectBestPosts(
+      profile.posts,
+      QUICK_SEARCH_ENRICH_LIMIT
+    );
+
+    console.log(
+      `[QUICK SEARCH] ${profile.posts.length} postingan ditemukan; ` +
+        `${selectedPosts.length} postingan terbaik akan diproses detail.`
+    );
+
     const [enrichedPosts, existingCategories] = await Promise.all([
-      enrichPosts(
-        profile.posts,
-        socialMedia as "instagram" | "tiktok",
-        {
-          concurrency: ENRICHMENT_CONCURRENCY,
-          dropFailed: false,
-          expectedUsername: profile.username,
-        }
-      ),
-      prisma.mst_categories.findMany({ select: { name: true } }),
+      enrichPosts(selectedPosts, socialMedia as "instagram" | "tiktok", {
+        concurrency: ENRICHMENT_CONCURRENCY,
+        dropFailed: false,
+        expectedUsername: profile.username,
+      }),
+
+      prisma.mst_categories.findMany({
+        select: {
+          name: true,
+        },
+      }),
     ]);
 
     if (enrichedPosts.length === 0) {
