@@ -322,7 +322,13 @@ atau { "gender": "unknown" }
 }
 
 export interface LocationCheck {
+  status:
+    | "indonesian"
+    | "uncertain"
+    | "not_indonesian";
+
   isIndonesian: boolean;
+  confidence: number;
   cityGuess: string | null;
 }
 
@@ -330,11 +336,6 @@ export async function checkIndonesianLocation(
   bio: string,
   posts: RawPost[]
 ): Promise<LocationCheck> {
-  /*
-   * Caption tetap digunakan untuk mendeteksi bahasa
-   * dan konteks akun, tetapi lokasi perjalanan dalam
-   * caption tidak boleh dipakai sebagai domisili.
-   */
   const captions = posts
     .slice(0, 10)
     .map((post, index) => {
@@ -350,32 +351,42 @@ export async function checkIndonesianLocation(
     .join("\n\n---\n\n");
 
   const prompt = `
-Kamu adalah sistem klasifikasi untuk menentukan apakah pemilik akun media sosial kemungkinan besar merupakan creator yang berbasis di Indonesia.
+Kamu adalah sistem klasifikasi untuk menentukan apakah pemilik akun media sosial berbasis di Indonesia.
 
 PENTING:
-- Jangan menentukan negara asal akun berdasarkan lokasi postingan.
-- Jangan menganggap akun bukan Indonesia hanya karena postingannya dibuat di luar negeri.
-- Creator Indonesia dapat sedang traveling, bekerja, belajar, menghadiri acara, atau membuat konten di luar negeri.
-- Nama negara, kota, landmark, hotel, bandara, dan lokasi wisata di dalam caption bukan bukti domisili.
-- Caption berbahasa Inggris juga tidak otomatis berarti akun bukan Indonesia.
-- Kota asal atau domisili hanya boleh ditebak jika disebutkan dengan cukup jelas di BIO.
-- Jangan menebak cityGuess berdasarkan tempat liburan atau lokasi postingan.
+- Jangan menentukan negara asal berdasarkan lokasi postingan.
+- Creator Indonesia dapat sedang traveling, bekerja, belajar, atau membuat konten di luar negeri.
+- Kota, negara, hotel, bandara, dan tempat wisata di caption bukan bukti domisili.
+- Caption berbahasa Inggris tidak otomatis berarti akun bukan Indonesia.
+- cityGuess hanya boleh diambil dari informasi domisili yang jelas di BIO.
+- Jangan mengambil cityGuess dari lokasi perjalanan atau caption.
 
-Gunakan indikator berikut untuk mendeteksi akun Indonesia:
+Gunakan indikator berikut:
 1. Penggunaan Bahasa Indonesia atau bahasa daerah.
-2. Istilah, budaya, kebiasaan, merek, acara, atau konteks masyarakat Indonesia.
-3. Kontak bisnis dengan nomor Indonesia (+62).
-4. Email, agensi, manajemen, organisasi, atau perusahaan Indonesia.
-5. Penyebutan identitas atau domisili Indonesia pada bio.
-6. Mayoritas audiens atau aktivitas kontennya berkaitan dengan Indonesia.
+2. Konteks budaya, merek, organisasi, acara, atau masyarakat Indonesia.
+3. Nomor kontak Indonesia dengan kode +62.
+4. Agensi, manajemen, perusahaan, atau email bisnis Indonesia.
+5. Identitas atau domisili Indonesia pada bio.
+6. Aktivitas atau mayoritas audiens yang berhubungan dengan Indonesia.
 
-Aturan keputusan:
-- isIndonesian = true apabila terdapat indikasi yang cukup bahwa creator berbasis di Indonesia.
-- isIndonesian = false hanya jika terdapat bukti kuat bahwa creator berbasis di negara lain dan tidak memiliki hubungan yang berarti dengan Indonesia.
-- Jika buktinya meragukan tetapi terdapat penggunaan Bahasa Indonesia atau konteks Indonesia, pilih isIndonesian = true.
-- Jangan menolak akun Indonesia hanya karena banyak postingan traveling di luar negeri.
-- cityGuess hanya boleh diisi dari informasi domisili yang jelas di BIO.
-- Jika kota tidak jelas dari BIO, gunakan cityGuess = null.
+Klasifikasikan menjadi salah satu:
+
+1. "indonesian"
+   Gunakan jika terdapat bukti yang cukup bahwa creator berbasis di Indonesia.
+
+2. "uncertain"
+   Gunakan jika informasi tidak cukup, bio kosong, caption terlalu sedikit,
+   caption mayoritas bahasa Inggris, atau asal akun tidak dapat dipastikan.
+
+3. "not_indonesian"
+   Gunakan HANYA jika terdapat bukti kuat bahwa creator berbasis di negara lain
+   dan tidak memiliki hubungan yang berarti dengan Indonesia.
+
+Aturan confidence:
+- Nilai antara 0 sampai 100.
+- 80–100 untuk keputusan yang memiliki bukti kuat.
+- 50–79 untuk indikasi cukup tetapi belum sepenuhnya pasti.
+- Di bawah 50 jika informasinya tidak mencukupi.
 
 BIO:
 ${String(bio ?? "").trim() || "(bio kosong)"}
@@ -383,16 +394,29 @@ ${String(bio ?? "").trim() || "(bio kosong)"}
 CONTOH CAPTION:
 ${captions || "(caption tidak tersedia)"}
 
-Balas HANYA dengan JSON valid tanpa markdown, tanpa penjelasan, dan tanpa teks tambahan.
+Balas HANYA JSON valid tanpa markdown:
 
-Format:
-{"isIndonesian":true,"cityGuess":"Jakarta"}
+{
+  "status": "indonesian",
+  "confidence": 90,
+  "cityGuess": "Jakarta"
+}
 
-Jika kota tidak diketahui:
-{"isIndonesian":true,"cityGuess":null}
+Contoh jika ragu:
 
-Jika terdapat bukti kuat bahwa akun bukan Indonesia:
-{"isIndonesian":false,"cityGuess":null}
+{
+  "status": "uncertain",
+  "confidence": 40,
+  "cityGuess": null
+}
+
+Contoh jika yakin bukan Indonesia:
+
+{
+  "status": "not_indonesian",
+  "confidence": 90,
+  "cityGuess": null
+}
 `;
 
   try {
@@ -400,10 +424,6 @@ Jika terdapat bukti kuat bahwa akun bukan Indonesia:
       prompt
     );
 
-    /*
-     * Membersihkan kemungkinan code fence jika
-     * Gemini tetap mengirim ```json.
-     */
     const cleanedText = String(text ?? "")
       .trim()
       .replace(/^```json\s*/i, "")
@@ -413,43 +433,73 @@ Jika terdapat bukti kuat bahwa akun bukan Indonesia:
 
     const parsed = JSON.parse(cleanedText);
 
-    if (
-      typeof parsed.isIndonesian !==
-      "boolean"
-    ) {
-      throw new Error(
-        "Respons Gemini tidak memiliki isIndonesian yang valid"
-      );
-    }
+    const validStatuses = [
+      "indonesian",
+      "uncertain",
+      "not_indonesian",
+    ] as const;
+
+    const status =
+      validStatuses.includes(parsed.status)
+        ? parsed.status
+        : "uncertain";
+
+    const rawConfidence = Number(
+      parsed.confidence
+    );
+
+    const confidence = Number.isFinite(
+      rawConfidence
+    )
+      ? Math.max(
+          0,
+          Math.min(100, rawConfidence)
+        )
+      : 0;
+
+    /*
+     * Keputusan "bukan Indonesia" hanya diterima
+     * jika confidence minimal 80.
+     *
+     * Jika Gemini mengatakan bukan Indonesia tetapi
+     * keyakinannya rendah, ubah menjadi uncertain.
+     */
+    const finalStatus =
+      status === "not_indonesian" &&
+      confidence < 80
+        ? "uncertain"
+        : status;
 
     const cityGuess =
-      parsed.isIndonesian &&
+      finalStatus === "indonesian" &&
       typeof parsed.cityGuess === "string" &&
       parsed.cityGuess.trim()
         ? parsed.cityGuess.trim()
         : null;
 
     return {
+      status: finalStatus,
+
       isIndonesian:
-        parsed.isIndonesian,
+        finalStatus === "indonesian",
+
+      confidence,
 
       cityGuess,
     };
   } catch (error) {
     console.error(
-      "[LOCATION CHECK] Gagal memeriksa lokasi akun:",
+      "[LOCATION CHECK] Gagal memeriksa lokasi:",
       error
     );
 
     /*
-     * Jangan langsung membuang akun ketika Gemini
-     * error atau respons JSON-nya rusak.
-     *
-     * Akun tetap boleh diproses, tetapi city tidak
-     * ditebak.
+     * Jika Gemini error, jangan buang akun.
      */
     return {
-      isIndonesian: true,
+      status: "uncertain",
+      isIndonesian: false,
+      confidence: 0,
       cityGuess: null,
     };
   }
