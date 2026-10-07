@@ -1,8 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/refresh-profile-photos",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install --include=optional --os=linux --cpu=x64 --libc=glibc"
 }
