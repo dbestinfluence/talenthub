@@ -330,34 +330,131 @@ export async function checkIndonesianLocation(
   bio: string,
   posts: RawPost[]
 ): Promise<LocationCheck> {
+  /*
+   * Caption tetap digunakan untuk mendeteksi bahasa
+   * dan konteks akun, tetapi lokasi perjalanan dalam
+   * caption tidak boleh dipakai sebagai domisili.
+   */
+  const captions = posts
+    .slice(0, 10)
+    .map((post, index) => {
+      const caption = String(
+        post.caption ?? ""
+      ).trim();
+
+      return caption
+        ? `Caption ${index + 1}:\n${caption}`
+        : "";
+    })
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+
   const prompt = `
-Kamu sistem deteksi apakah sebuah akun social media adalah akun asal Indonesia.
+Kamu adalah sistem klasifikasi untuk menentukan apakah pemilik akun media sosial kemungkinan besar merupakan creator yang berbasis di Indonesia.
 
-Bio: ${bio}
-Contoh caption postingan:
-${posts
-  .slice(0, 5)
-  .map((p) => p.caption)
-  .join("\n---\n")}
+PENTING:
+- Jangan menentukan negara asal akun berdasarkan lokasi postingan.
+- Jangan menganggap akun bukan Indonesia hanya karena postingannya dibuat di luar negeri.
+- Creator Indonesia dapat sedang traveling, bekerja, belajar, menghadiri acara, atau membuat konten di luar negeri.
+- Nama negara, kota, landmark, hotel, bandara, dan lokasi wisata di dalam caption bukan bukti domisili.
+- Caption berbahasa Inggris juga tidak otomatis berarti akun bukan Indonesia.
+- Kota asal atau domisili hanya boleh ditebak jika disebutkan dengan cukup jelas di BIO.
+- Jangan menebak cityGuess berdasarkan tempat liburan atau lokasi postingan.
 
-Berdasarkan bahasa yang dipakai (Bahasa Indonesia/daerah), lokasi yang disebut, konteks budaya,
-tentukan apakah akun ini KEMUNGKINAN BESAR berbasis di Indonesia.
+Gunakan indikator berikut untuk mendeteksi akun Indonesia:
+1. Penggunaan Bahasa Indonesia atau bahasa daerah.
+2. Istilah, budaya, kebiasaan, merek, acara, atau konteks masyarakat Indonesia.
+3. Kontak bisnis dengan nomor Indonesia (+62).
+4. Email, agensi, manajemen, organisasi, atau perusahaan Indonesia.
+5. Penyebutan identitas atau domisili Indonesia pada bio.
+6. Mayoritas audiens atau aktivitas kontennya berkaitan dengan Indonesia.
 
-Balas HANYA JSON, tanpa markdown:
-{ "isIndonesian": true, "cityGuess": "Jakarta" }
-atau
-{ "isIndonesian": false, "cityGuess": null }
+Aturan keputusan:
+- isIndonesian = true apabila terdapat indikasi yang cukup bahwa creator berbasis di Indonesia.
+- isIndonesian = false hanya jika terdapat bukti kuat bahwa creator berbasis di negara lain dan tidak memiliki hubungan yang berarti dengan Indonesia.
+- Jika buktinya meragukan tetapi terdapat penggunaan Bahasa Indonesia atau konteks Indonesia, pilih isIndonesian = true.
+- Jangan menolak akun Indonesia hanya karena banyak postingan traveling di luar negeri.
+- cityGuess hanya boleh diisi dari informasi domisili yang jelas di BIO.
+- Jika kota tidak jelas dari BIO, gunakan cityGuess = null.
 
-Kalau kota tidak bisa ditebak dari bio/caption, cityGuess harus null meskipun isIndonesian true.
+BIO:
+${String(bio ?? "").trim() || "(bio kosong)"}
+
+CONTOH CAPTION:
+${captions || "(caption tidak tersedia)"}
+
+Balas HANYA dengan JSON valid tanpa markdown, tanpa penjelasan, dan tanpa teks tambahan.
+
+Format:
+{"isIndonesian":true,"cityGuess":"Jakarta"}
+
+Jika kota tidak diketahui:
+{"isIndonesian":true,"cityGuess":null}
+
+Jika terdapat bukti kuat bahwa akun bukan Indonesia:
+{"isIndonesian":false,"cityGuess":null}
 `;
 
-  const text = await generateWithRetry(prompt);
   try {
-    return JSON.parse(text);
-  } catch {
-    return { isIndonesian: false, cityGuess: null };
+    const text = await generateWithRetry(
+      prompt
+    );
+
+    /*
+     * Membersihkan kemungkinan code fence jika
+     * Gemini tetap mengirim ```json.
+     */
+    const cleanedText = String(text ?? "")
+      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    const parsed = JSON.parse(cleanedText);
+
+    if (
+      typeof parsed.isIndonesian !==
+      "boolean"
+    ) {
+      throw new Error(
+        "Respons Gemini tidak memiliki isIndonesian yang valid"
+      );
+    }
+
+    const cityGuess =
+      parsed.isIndonesian &&
+      typeof parsed.cityGuess === "string" &&
+      parsed.cityGuess.trim()
+        ? parsed.cityGuess.trim()
+        : null;
+
+    return {
+      isIndonesian:
+        parsed.isIndonesian,
+
+      cityGuess,
+    };
+  } catch (error) {
+    console.error(
+      "[LOCATION CHECK] Gagal memeriksa lokasi akun:",
+      error
+    );
+
+    /*
+     * Jangan langsung membuang akun ketika Gemini
+     * error atau respons JSON-nya rusak.
+     *
+     * Akun tetap boleh diproses, tetapi city tidak
+     * ditebak.
+     */
+    return {
+      isIndonesian: true,
+      cityGuess: null,
+    };
   }
 }
+
 
 // ============================================================================
 // >>> BAGIAN BARU — FLOW 2 <<<
