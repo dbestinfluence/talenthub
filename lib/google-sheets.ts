@@ -146,7 +146,8 @@ function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
   // This is the client/brand-facing sheet. Use Talenthub's ER calculation,
   // but keep the column label concise for the recipient.
   const header = ['No.', 'Influencer Name', 'Username', 'Followers', 'Total Post', 'ER', 'Avg. View',
-    'Avg. Brand View', 'CPV All', 'CPV Brand', 'SOW', 'Platform', 'Qty', 'Rate Card', 'Total'];
+    'Avg. Brand View', 'CPV All', 'CPV Brand', 'SOW', 'Platform', 'Qty', 'Price Type', 'Rate Card', 'Mark Price', 'Total'];
+  const countedBundleIds = new Set<string>();
   return [
     [`Project: ${project.prj_nama} (${project.prj_kode})`],
     [`Brand: ${project.mst_brand.brd_nama ?? '-'}`],
@@ -154,15 +155,26 @@ function sheetValues(project: Awaited<ReturnType<typeof loadProject>>) {
     header,
     ...project.dtl_project.map((detail, index) => {
       const creator = detail.mst_creators;
+      const isBundle = detail.drf_pricing_type === 'BUNDLE' && Boolean(detail.drf_bundle_id);
+      const isBundleLead = isBundle && !countedBundleIds.has(detail.drf_bundle_id!);
+      if (isBundleLead) countedBundleIds.add(detail.drf_bundle_id!);
+      const price = isBundle
+        ? Number(detail.drf_bundle_price ?? 0)
+        : Number(detail.drf_markup_price ?? 0);
+      const total = isBundle
+        ? (isBundleLead ? price : 0)
+        : price * Number(detail.drf_qty ?? 0);
       return [index + 1, creator.name, creator.username, creator.followers ?? 0, creator.total_post ?? 0,
         Number(creator.er_talenthub ?? 0) / 100,
         creator.average_view ?? 0, creator.average_view_brand ?? 0,
-        creator.average_view ? Number(detail.drf_markup_price ?? 0) / creator.average_view : 0,
-        creator.average_view_brand ? Number(detail.drf_markup_price ?? 0) / creator.average_view_brand : 0,
+        creator.average_view ? price / creator.average_view : 0,
+        creator.average_view_brand ? price / creator.average_view_brand : 0,
         detail.mst_sow?.sow_nama ?? '-',
-        creator.social_media, detail.drf_qty,
-        Number(detail.drf_markup_price ?? 0),
-        Number(detail.drf_markup_price ?? 0) * Number(detail.drf_qty ?? 0)];
+        detail.drf_platform ?? creator.social_media, detail.drf_qty,
+        isBundle ? (isBundleLead ? 'Bundling' : '↳ Included') : 'Reguler',
+        isBundle && !isBundleLead ? '—' : Number(detail.drf_rate ?? 0),
+        isBundle && !isBundleLead ? 'Included' : price,
+        isBundle && !isBundleLead ? 'Included' : total];
     }),
   ];
 }
@@ -212,9 +224,9 @@ export async function syncProjectSpreadsheet(projectId: number, shareWithBrandEm
     : { id: project.prj_sheetid!, url: project.prj_sheeturl ?? `https://docs.google.com/spreadsheets/d/${project.prj_sheetid}/edit` };
 
   if (!created) {
-    await googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}/values/${encodeURIComponent('Creators!A:P')}:clear`, {
+    await googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}/values/${encodeURIComponent('Creators!A:Q')}:clear`, {
       method: 'POST', body: '{}',
-    }).catch(async () => googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}/values/${encodeURIComponent('A:P')}:clear`, { method: 'POST', body: '{}' }));
+    }).catch(async () => googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}/values/${encodeURIComponent('A:Q')}:clear`, { method: 'POST', body: '{}' }));
   }
   await googleRequest(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}/values/A1?valueInputOption=USER_ENTERED`,
@@ -225,13 +237,14 @@ export async function syncProjectSpreadsheet(projectId: number, shareWithBrandEm
       method: 'POST',
       body: JSON.stringify({ requests: [
         { updateSheetProperties: { properties: { sheetId: 0, title: 'Creators', gridProperties: { frozenRowCount: 4 } }, fields: 'title,gridProperties.frozenRowCount' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-        { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-        { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
-        { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+        { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 17 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 17 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
         { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-        { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 15 } } },
+        { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 13, endColumnIndex: 17 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat.horizontalAlignment' } },
+        { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 17 } } },
       ] }),
     });
   }
@@ -240,14 +253,15 @@ export async function syncProjectSpreadsheet(projectId: number, shareWithBrandEm
   await googleRequest(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet.id}:batchUpdate`, {
     method: 'POST',
     body: JSON.stringify({ requests: [
-      { unmergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 } } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-      { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, mergeType: 'MERGE_ALL' } },
-      { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
-      { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
+      { unmergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 17 } } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+      { mergeCells: { range: { sheetId: 0, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 17 }, mergeType: 'MERGE_ALL' } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 17 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', textFormat: { bold: true } } }, fields: 'userEnteredFormat(horizontalAlignment,textFormat)' } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 17 }, cell: { userEnteredFormat: { backgroundColor: { red: .31, green: .51, blue: .74 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat' } },
       { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-      { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 15 } } },
+      { repeatCell: { range: { sheetId: 0, startRowIndex: 4, startColumnIndex: 13, endColumnIndex: 17 }, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat.horizontalAlignment' } },
+      { autoResizeDimensions: { dimensions: { sheetId: 0, dimension: 'COLUMNS', startIndex: 0, endIndex: 17 } } },
     ] }),
   });
   const brandEmail = project.mst_brand.brd_email?.trim();

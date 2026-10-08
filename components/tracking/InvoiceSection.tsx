@@ -5,6 +5,7 @@ import autoTable from "jspdf-autotable";
 import { loadCompanyLogo } from "@/lib/pdf-branding";
 import { showAlertValidationError, showSuccess } from "@/lib/alert";
 import { calculateTaxSummary } from "@/lib/tax";
+import CreatorTable from "./CreatorTable";
 
 type Props = {
   projectDetail: any;
@@ -12,6 +13,8 @@ type Props = {
   handleSort: (field: string) => void;
   getSortIcon: (field: string) => ReactNode;
   handleFinish: () => void;
+  showView?: boolean;
+  onView?: (creator: any) => void;
   readOnly?: boolean;
 };
 
@@ -26,6 +29,8 @@ export default function InvoiceSection({
   handleSort,
   getSortIcon,
   handleFinish,
+  showView,
+  onView,
   readOnly = false,
 }: Props) {
   const [sending, setSending] = useState(false);
@@ -140,6 +145,27 @@ export default function InvoiceSection({
     }
   };
   const payment = projectDetail?.payment;
+  const documentRows = creators.reduce<any[]>((rows, creator) => {
+    if (creator.pricingType !== "BUNDLE" || !creator.bundleId) {
+      rows.push(creator);
+      return rows;
+    }
+    if (!creator.isBundleLead) return rows;
+
+    const members = creators.filter((item) => item.bundleId === creator.bundleId);
+    rows.push({
+      ...creator,
+      rowKey: creator.bundleId,
+      sow: `Bundling: ${members.map((item) => `${item.drf_qty ?? 0}x ${item.sow ?? "-"}`).join("; ")}`,
+      platform: [...new Set(members.map((item) => item.platform ?? "-"))].join(" / "),
+      drf_qty: "1 bundle",
+      rateCard: null,
+      markupPrice: creator.bundlePrice,
+      total: creator.bundlePrice,
+    });
+    return rows;
+  }, []);
+
   const getFileName = () => {
     const invoiceNo = invoiceNoInput.trim().replace(/[^a-z0-9_.-]+/gi, "-");
     return `Invoice_${invoiceNo || projectDetail?.name || "Project"}.pdf`;
@@ -258,7 +284,7 @@ export default function InvoiceSection({
       doc.text(line, headerValueX, companyAddressY + index * 4, { align: "right" });
     });
 
-    const invoiceRows = creators.map((creator, index) => [
+    const invoiceRows = documentRows.map((creator, index) => [
       index + 1,
       creator.name ?? "-",
       `${creator.sow ?? "-"} · ${creator.platform ?? "-"}`,
@@ -420,20 +446,13 @@ export default function InvoiceSection({
         <DocumentField label="Quotation No" value={String(projectDetail?.quotationNo ?? "")} readOnly onChange={() => undefined} onSave={() => undefined} />
       </div>
 
-      <div className="-mx-4 mt-8 w-auto overflow-x-auto rounded-xl border border-slate-200 touch-pan-x sm:mx-0 sm:w-full">
-        <table className="min-w-[720px] w-full border-collapse text-xs sm:min-w-[850px] sm:text-sm whitespace-nowrap">
-          <thead><tr className="border-y border-slate-300 bg-gray-100 text-center">
-            {[{ label: "No.", field: "no" }, { label: "Description", field: "name" }, { label: "SOW", field: "sow" }, { label: "Platform", field: "platform" }, { label: "Qty", field: "drf_qty" }, { label: "Rate Card", field: "rateCard" }, { label: "Mark Price", field: "markupPrice" }, { label: "Total", field: "total" }].map((head) => (
-              <th key={head.field} onClick={() => handleSort(head.field)} className="cursor-pointer border-x border-slate-200 px-3 py-3 text-xs font-bold hover:bg-slate-50 sm:px-5 sm:py-4">{head.label}<span className="ml-1 text-slate-400">{getSortIcon(head.field)}</span></th>
-            ))}
-          </tr></thead>
-          <tbody>{creators.map((creator, index) => (
-            <tr key={creator.drf_id} className="border-b border-slate-200">
-              <td className="border-x px-3 py-3 text-center sm:px-5 sm:py-4">{index + 1}</td><td className="border-x px-3 py-3 sm:px-5 sm:py-4">{creator.name ?? "-"}</td><td className="border-x px-3 py-3 sm:px-5 sm:py-4">{creator.sow ?? "-"}</td><td className="border-x px-3 py-3 text-center sm:px-5 sm:py-4">{creator.platform ?? "-"}</td><td className="border-x px-3 py-3 text-center sm:px-5 sm:py-4">{creator.drf_qty ?? "-"}</td><td className="border-x px-3 py-3 text-right sm:px-5 sm:py-4">{formatRupiah(creator.rateCard)}</td><td className="border-x px-3 py-3 text-right sm:px-5 sm:py-4">{formatRupiah(creator.markupPrice)}</td><td className="border-x px-3 py-3 text-right font-medium sm:px-5 sm:py-4">{formatRupiah(creator.total)}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
+      <CreatorTable
+        creators={creators}
+        handleSort={handleSort}
+        getSortIcon={getSortIcon}
+        showView={showView}
+        onView={onView}
+      />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-6"><h3 className="text-xl font-bold text-slate-900">Payment Method</h3>{payment ? <div className="mt-6 space-y-4 text-sm"><PaymentRow label="Bank" value={payment.bank} /><PaymentRow label="Account No" value={payment.accountNo} /><PaymentRow label="Account Name" value={payment.accountName} /></div> : <p className="mt-6 text-sm text-slate-500">Payment details are not available for this invoice.</p>}</div>

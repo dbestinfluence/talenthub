@@ -241,12 +241,33 @@ export default function QuotationSection({
     // =====================================================
     // 5. TABEL CREATOR
     // =====================================================
+    const quotationRows = creators.reduce<any[]>((rows, creator) => {
+      if (creator.pricingType !== "BUNDLE" || !creator.bundleId) {
+        rows.push(creator);
+        return rows;
+      }
+      if (!creator.isBundleLead) return rows;
+
+      const members = creators.filter((item) => item.bundleId === creator.bundleId);
+      rows.push({
+        ...creator,
+        name: `${creator.name ?? "-"} (Bundling)`,
+        sow: members.map((item) => `- ${item.drf_qty ?? 0}x ${item.sow ?? "-"}`).join("\n"),
+        platform: [...new Set(members.map((item) => item.platform ?? "-"))].join(" / "),
+        drf_qty: "1 bundle",
+        rateCard: null,
+        markupPrice: creator.bundlePrice,
+        total: creator.bundlePrice,
+      });
+      return rows;
+    }, []);
+
     autoTable(doc, {
       startY: 84,
 
       head: [["Description", "SOW", "Platform", "Qty", "Rate Card", "Total"]],
 
-      body: creators.map((creator) => [
+      body: quotationRows.map((creator) => [
         creator.name || "-",
 
         creator.sow ?? "-",

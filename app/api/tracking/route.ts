@@ -485,28 +485,38 @@ export async function PUT(request: Request) {
           drf_rate: true,
           drf_markup_price: true,
           drf_qty: true,
+          drf_pricing_type: true,
+          drf_bundle_id: true,
+          drf_bundle_price: true,
         },
+        orderBy: [{ drf_sort_order: "asc" }, { drf_id: "asc" }],
       });
 
       const detailsWithoutSow = draftDetails.filter((detail) => !detail.drf_sow);
+      const validatedBundleIds = new Set<string>();
       const missingPricingFields = draftDetails.reduce<Record<number, {
         rateCard: boolean;
         markupPrice: boolean;
+        bundlePrice: boolean;
         qty: boolean;
       }>>((result, detail) => {
+        const isBundle = detail.drf_pricing_type === "BUNDLE" && Boolean(detail.drf_bundle_id);
+        const isBundleLead = isBundle && !validatedBundleIds.has(detail.drf_bundle_id!);
+        if (isBundleLead) validatedBundleIds.add(detail.drf_bundle_id!);
         const fields = {
-          rateCard: Number(detail.drf_rate ?? 0) <= 0,
-          markupPrice: Number(detail.drf_markup_price ?? 0) <= 0,
+          rateCard: (!isBundle || isBundleLead) && Number(detail.drf_rate ?? 0) <= 0,
+          markupPrice: !isBundle && Number(detail.drf_markup_price ?? 0) <= 0,
+          bundlePrice: isBundleLead && Number(detail.drf_bundle_price ?? 0) <= 0,
           qty: detail.drf_qty === null || !Number.isInteger(detail.drf_qty) || detail.drf_qty <= 0,
         };
-        if (fields.rateCard || fields.markupPrice || fields.qty) result[detail.drf_id] = fields;
+        if (fields.rateCard || fields.markupPrice || fields.bundlePrice || fields.qty) result[detail.drf_id] = fields;
         return result;
       }, {});
 
       if (detailsWithoutSow.length > 0 || Object.keys(missingPricingFields).length > 0) {
         return NextResponse.json(
           {
-            error: "Complete the SOW, Rate Card, Mark Price, and Qty for every creator before generating the quotation",
+            error: "Complete the SOW, Price Type, required price, and Qty before generating the quotation",
             missingSowCreatorIds: detailsWithoutSow.map((detail) => detail.drf_id),
             missingPricingFields,
           },

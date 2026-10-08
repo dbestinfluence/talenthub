@@ -66,6 +66,7 @@ export default function DraftPage() {
   const [invalidPricingFields, setInvalidPricingFields] = useState<Record<number, {
     rateCard: boolean;
     markupPrice: boolean;
+    bundlePrice: boolean;
     qty: boolean;
   }>>({});
   const [invalidRunningFields, setInvalidRunningFields] = useState<Record<number, {
@@ -176,7 +177,7 @@ const handleSowChange = async (creatorId: number, sowId: number | null) => {
 
 const handleDraftPriceChange = async (
   creatorId: number,
-  field: "rateCard" | "markupPrice" | "qty",
+  field: "rateCard" | "markupPrice" | "bundlePrice" | "qty",
   value: number | null
 ) => {
   const isInvalid = value === null || !Number.isFinite(value) || value <= 0;
@@ -185,6 +186,7 @@ const handleDraftPriceChange = async (
     [creatorId]: {
       rateCard: field === "rateCard" ? isInvalid : current[creatorId]?.rateCard ?? false,
       markupPrice: field === "markupPrice" ? isInvalid : current[creatorId]?.markupPrice ?? false,
+      bundlePrice: field === "bundlePrice" ? isInvalid : current[creatorId]?.bundlePrice ?? false,
       qty: field === "qty" ? isInvalid : current[creatorId]?.qty ?? false,
     },
   }));
@@ -193,7 +195,10 @@ const handleDraftPriceChange = async (
     setCreators((current) => current.map((creator) => {
       if (creator.drf_id !== creatorId) return creator;
       const updated = { ...creator, [field]: null };
-      if (field === "markupPrice") {
+      if (field === "bundlePrice") {
+        updated.bundlePrice = 0;
+        updated.total = 0;
+      } else if (field === "markupPrice") {
         updated.rate = 0;
         updated.total = 0;
       } else if (field === "qty") {
@@ -208,7 +213,8 @@ const handleDraftPriceChange = async (
   try {
     const databaseField = field === "rateCard"
       ? "drf_rate"
-      : field === "markupPrice" ? "drf_markup_price" : "drf_qty";
+      : field === "markupPrice" ? "drf_markup_price"
+      : field === "bundlePrice" ? "drf_bundle_price" : "drf_qty";
     const response = await fetch(`/api/tracking/detail?id=${creatorId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -218,6 +224,12 @@ const handleDraftPriceChange = async (
     if (!response.ok) throw new Error(result.error ?? "Failed to save pricing");
 
     setCreators((current) => current.map((creator) => {
+      if (field === "bundlePrice" && creator.bundleId) {
+        const editedCreator = current.find((item) => item.drf_id === creatorId);
+        if (editedCreator?.bundleId === creator.bundleId) {
+          return { ...creator, bundlePrice: value, total: creator.isBundleLead ? Number(value ?? 0) : 0 };
+        }
+      }
       if (creator.drf_id !== creatorId) return creator;
       const updated = { ...creator, [field]: value };
       if (field === "markupPrice") {
@@ -235,6 +247,21 @@ const handleDraftPriceChange = async (
       error instanceof Error ? error.message : "Failed to save pricing."
     );
     await loadCreators();
+  }
+};
+
+const handlePricingTypeChange = async (creatorId: number, pricingType: "NORMAL" | "BUNDLE") => {
+  try {
+    const response = await fetch(`/api/tracking/detail?id=${creatorId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pricingType }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "Failed to update Pricing Type");
+    await loadCreators();
+  } catch (error) {
+    await showAlertValidationError(error instanceof Error ? error.message : "Failed to update Pricing Type");
   }
 };
 
@@ -286,14 +313,18 @@ const handleGenerateQuotation = async () => {
   const pricingValidation = creators.reduce<Record<number, {
     rateCard: boolean;
     markupPrice: boolean;
+    bundlePrice: boolean;
     qty: boolean;
   }>>((result, creator) => {
+    const isBundle = creator.pricingType === "BUNDLE";
+    const isBundleLead = isBundle && creator.isBundleLead;
     const fields = {
-      rateCard: !Number.isFinite(Number(creator.rateCard)) || Number(creator.rateCard) <= 0,
-      markupPrice: !Number.isFinite(Number(creator.markupPrice)) || Number(creator.markupPrice) <= 0,
+      rateCard: (!isBundle || isBundleLead) && (!Number.isFinite(Number(creator.rateCard)) || Number(creator.rateCard) <= 0),
+      markupPrice: !isBundle && (!Number.isFinite(Number(creator.markupPrice)) || Number(creator.markupPrice) <= 0),
+      bundlePrice: isBundleLead && (!Number.isFinite(Number(creator.bundlePrice)) || Number(creator.bundlePrice) <= 0),
       qty: !Number.isInteger(Number(creator.drf_qty)) || Number(creator.drf_qty) <= 0,
     };
-    if (fields.rateCard || fields.markupPrice || fields.qty) result[creator.drf_id] = fields;
+    if (fields.rateCard || fields.markupPrice || fields.bundlePrice || fields.qty) result[creator.drf_id] = fields;
     return result;
   }, {});
 
@@ -302,7 +333,7 @@ const handleGenerateQuotation = async () => {
   if (creatorsWithoutSow.length > 0 || Object.keys(pricingValidation).length > 0) {
     setInvalidSowCreatorIds(creatorsWithoutSow.map((creator) => creator.drf_id));
     await showAlertValidationError(
-      "Complete the SOW, Rate Card, Mark Price, and Qty for every creator before generating the quotation."
+      "Complete the SOW, Pricing Type, price, and Qty for every creator before generating the quotation."
     );
     return;
   }
@@ -690,6 +721,7 @@ const renderTrackingSection = () => {
           onPlatformChange={handlePlatformChange}
           invalidSowCreatorIds={invalidSowCreatorIds}
           onDraftPriceChange={handleDraftPriceChange}
+          onPricingTypeChange={handlePricingTypeChange}
           invalidPricingFields={invalidPricingFields}
           onAddSow={handleAddSow}
           readOnly={isHistoricalView}
@@ -745,6 +777,8 @@ case "Quotation":
           handleSort={handleSort}
           getSortIcon={getSortIcon}
           handleFinish={handleFinishProject}
+          showView
+          onView={(creator) => handleUpdateRunningContent(creator, "view")}
           readOnly={isHistoricalView || isProjectFinished}
         />
       );
@@ -757,6 +791,8 @@ case "Quotation":
           handleSort={handleSort}
           getSortIcon={getSortIcon}
           handleFinish={handleFinishProject}
+          showView
+          onView={(creator) => handleUpdateRunningContent(creator, "view")}
           readOnly
         />
       );

@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 const PERIODS = new Set<DashboardPeriod>(["this_month", "last_month", "last_3_months", "last_6_months", "this_year"]);
 const STATUS_LABELS: Record<number, string> = { 1: "Draft", 2: "Quotation", 3: "Running", 4: "Report", 5: "Invoice" };
 const amountSelect = {
-  dtl_project: { select: { drf_markup_price: true, drf_qty: true, drf_creatorid: true } },
+  dtl_project: { select: { drf_markup_price: true, drf_qty: true, drf_creatorid: true, drf_pricing_type: true, drf_bundle_id: true, drf_bundle_price: true } },
 } as const;
 
 const TRANSIENT_DATABASE_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024"]);

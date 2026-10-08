@@ -21,8 +21,9 @@ type DraftSectionProps = {
   onSowChange: (creatorId: number, sowId: number | null) => void;
   onPlatformChange: (creatorId: number, platform: string) => void;
   invalidSowCreatorIds?: number[];
-  onDraftPriceChange: (creatorId: number, field: "rateCard" | "markupPrice" | "qty", value: number | null) => void;
-  invalidPricingFields?: Record<number, { rateCard: boolean; markupPrice: boolean; qty: boolean }>;
+  onDraftPriceChange: (creatorId: number, field: "rateCard" | "markupPrice" | "bundlePrice" | "qty", value: number | null) => void;
+  onPricingTypeChange: (creatorId: number, pricingType: "NORMAL" | "BUNDLE") => void;
+  invalidPricingFields?: Record<number, { rateCard: boolean; markupPrice: boolean; bundlePrice: boolean; qty: boolean }>;
   onAddSow: (creatorId: number) => void;
 };
 
@@ -41,6 +42,7 @@ export default function DraftSection({
   onPlatformChange,
   invalidSowCreatorIds,
   onDraftPriceChange,
+  onPricingTypeChange,
   invalidPricingFields,
   onAddSow,
   readOnly = false,
@@ -120,6 +122,7 @@ export default function DraftSection({
             draftPricingMode
             draftPricingEditable={!readOnly}
             onDraftPriceChange={onDraftPriceChange}
+            onPricingTypeChange={onPricingTypeChange}
             invalidPricingFields={invalidPricingFields}
             onAddSow={onAddSow}
           />

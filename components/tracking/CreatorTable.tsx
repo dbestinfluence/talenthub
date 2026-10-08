@@ -139,13 +139,14 @@ type Props = {
   draftPricingEditable?: boolean;
   invalidPricingFields?: Record<
     number,
-    { rateCard: boolean; markupPrice: boolean; qty: boolean }
+    { rateCard: boolean; markupPrice: boolean; bundlePrice: boolean; qty: boolean }
   >;
   onDraftPriceChange?: (
     creatorId: number,
-    field: "rateCard" | "markupPrice" | "qty",
+    field: "rateCard" | "markupPrice" | "bundlePrice" | "qty",
     value: number | null
   ) => void;
+  onPricingTypeChange?: (creatorId: number, pricingType: "NORMAL" | "BUNDLE") => void;
   onAddSow?: (creatorId: number) => void;
   invalidRunningFields?: Record<
     number,
@@ -183,6 +184,7 @@ export default function CreatorTable({
   draftPricingEditable = false,
   invalidPricingFields = {},
   onDraftPriceChange,
+  onPricingTypeChange,
   onAddSow,
   invalidRunningFields = {},
   handleSort,
@@ -234,6 +236,7 @@ export default function CreatorTable({
         { label: "SOW", field: "sow" },
         { label: "Platform", field: "platform" },
         { label: "Qty", field: "qty" },
+        { label: "Price Type", field: "pricingType" },
         ...(draftPricingMode
           ? [
               { label: "Rate Card", field: "rateCard" },
@@ -259,7 +262,7 @@ export default function CreatorTable({
     return (
       <tr
         key={creator.id}
-        className="border-b border-gray-200 hover:bg-gray-50 text-gray-800"
+        className={`border-b border-gray-200 text-gray-800 hover:bg-gray-50 ${creator.pricingType === "BUNDLE" ? "bg-orange-50/40" : ""}`}
       >
         <td className="border-x px-4 py-3 text-center">
           <input
@@ -328,6 +331,9 @@ export default function CreatorTable({
     const detailHref = "/tracking/detail/detail/" + creator.drf_creatorid;
     const hasInvalidSow = invalidSowCreatorIds.includes(creator.drf_id);
     const invalidRunning = invalidRunningFields[creator.drf_id];
+    const effectivePrice = creator.pricingType === "BUNDLE"
+      ? Number(creator.bundlePrice ?? 0)
+      : Number(creator.markupPrice ?? 0);
     const usedSowIds = new Set(
       creators
         .filter(
@@ -342,7 +348,11 @@ export default function CreatorTable({
     return (
       <tr
         key={creator.id}
-        className="border-b border-gray-200 hover:bg-gray-50 text-gray-800"
+        className={`border-b border-gray-200 text-gray-800 hover:bg-gray-50 ${
+          creator.pricingType === "BUNDLE"
+            ? "border-l-4 border-l-orange-300 bg-orange-50/50"
+            : ""
+        }`}
       >
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
           {startIndex + index + 1}
@@ -399,19 +409,19 @@ export default function CreatorTable({
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-          {creator.markupPrice && creator.averageView
+          {effectivePrice > 0 && creator.averageView
             ? "Rp" +
               Math.round(
-                creator.markupPrice / creator.averageView
+                effectivePrice / creator.averageView
               ).toLocaleString("en-US")
             : "-"}
         </td>
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-          {creator.markupPrice && creator.averageViewBrand
+          {effectivePrice > 0 && creator.averageViewBrand
             ? "Rp" +
               Math.round(
-                creator.markupPrice / creator.averageViewBrand
+                effectivePrice / creator.averageViewBrand
               ).toLocaleString("en-US")
             : "-"}
         </td>
@@ -479,10 +489,34 @@ export default function CreatorTable({
           )}
         </td>
 
+        <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
+          {draftPricingMode && draftPricingEditable && (creator.pricingType !== "BUNDLE" || creator.isBundleLead) ? (
+            <select
+              value={creator.pricingType === "BUNDLE" ? "BUNDLE" : "NORMAL"}
+              onChange={(event) => onPricingTypeChange?.(
+                creator.drf_id,
+                event.target.value as "NORMAL" | "BUNDLE"
+              )}
+              className="min-w-28 rounded-md border border-slate-300 bg-white px-2 py-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-400"
+            >
+              <option value="NORMAL">Reguler</option>
+              <option value="BUNDLE">Bundling</option>
+            </select>
+          ) : (
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${creator.pricingType === "BUNDLE" ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>
+              {creator.pricingType === "BUNDLE"
+                ? creator.isBundleLead ? "Bundling" : "↳ Included"
+                : "Reguler"}
+            </span>
+          )}
+        </td>
+
         {draftPricingMode ? (
           <>
             <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-              {draftPricingEditable ? (
+              {creator.pricingType === "BUNDLE" && !creator.isBundleLead ? (
+                <span className="text-base font-medium text-slate-400">—</span>
+              ) : draftPricingEditable ? (
                 <DraftPriceInput
                   value={creator.rateCard}
                   label={`Rate Card for ${creator.name || "creator"}`}
@@ -501,20 +535,28 @@ export default function CreatorTable({
               )}
             </td>
             <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-              {draftPricingEditable ? (
+              {creator.pricingType === "BUNDLE" && !creator.isBundleLead ? (
+                <span className="text-xs font-medium text-orange-600">Included</span>
+              ) : draftPricingEditable ? (
                 <DraftPriceInput
-                  value={creator.markupPrice}
-                  label={`Mark Price for ${creator.name || "creator"}`}
+                  value={creator.pricingType === "BUNDLE" ? creator.bundlePrice : creator.markupPrice}
+                  label={`${creator.pricingType === "BUNDLE" ? "Bundle Price" : "Mark Price"} for ${creator.name || "creator"}`}
                   currency
                   invalid={Boolean(
-                    invalidPricingFields[creator.drf_id]?.markupPrice
+                    creator.pricingType === "BUNDLE"
+                      ? invalidPricingFields[creator.drf_id]?.bundlePrice
+                      : invalidPricingFields[creator.drf_id]?.markupPrice
                   )}
                   onCommit={(value) =>
-                    onDraftPriceChange?.(creator.drf_id, "markupPrice", value)
+                    onDraftPriceChange?.(
+                      creator.drf_id,
+                      creator.pricingType === "BUNDLE" ? "bundlePrice" : "markupPrice",
+                      value
+                    )
                   }
                 />
-              ) : creator.markupPrice ? (
-                creator.markupPrice.toLocaleString("en-US")
+              ) : (creator.pricingType === "BUNDLE" ? creator.bundlePrice : creator.markupPrice) ? (
+                Number(creator.pricingType === "BUNDLE" ? creator.bundlePrice : creator.markupPrice).toLocaleString("en-US")
               ) : (
                 "-"
               )}
@@ -523,18 +565,28 @@ export default function CreatorTable({
         ) : (
           <>
             <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-              {creator.rateCard ? creator.rateCard.toLocaleString("en-US") : "-"}
+              {creator.pricingType === "BUNDLE" && !creator.isBundleLead
+                ? "—"
+                : creator.rateCard
+                  ? `Rp ${creator.rateCard.toLocaleString("en-US")}`
+                  : "-"}
             </td>
             <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-              {creator.markupPrice
-                ? creator.markupPrice.toLocaleString("en-US")
-                : "-"}
+              {creator.pricingType === "BUNDLE"
+                ? creator.isBundleLead && creator.bundlePrice
+                  ? Number(creator.bundlePrice).toLocaleString("en-US")
+                  : "Included"
+                : creator.markupPrice
+                  ? creator.markupPrice.toLocaleString("en-US")
+                  : "-"}
             </td>
           </>
         )}
 
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
-          {creator.total ? creator.total.toLocaleString("en-US") : "-"}
+          {creator.pricingType === "BUNDLE" && !creator.isBundleLead
+            ? "Included"
+            : creator.total ? `Rp ${creator.total.toLocaleString("en-US")}` : "-"}
         </td>
 
         {runningMode ? (
@@ -615,9 +667,9 @@ export default function CreatorTable({
           </>
         ) : null}
 
-        <td className="sticky right-0 min-w-[220px] whitespace-nowrap bg-white p-3 text-center">
+        <td className={`sticky right-0 min-w-[220px] whitespace-nowrap p-3 text-center ${creator.pricingType === "BUNDLE" ? "bg-orange-50" : "bg-white"}`}>
           <div className="flex flex-nowrap items-center justify-center gap-2">
-            {draftPricingMode && draftPricingEditable && onAddSow ? (
+            {draftPricingMode && draftPricingEditable && onAddSow && (creator.pricingType !== "BUNDLE" || creator.isBundleLead) ? (
               <button
                 type="button"
                 onClick={() => onAddSow(creator.drf_id)}
@@ -716,7 +768,7 @@ export default function CreatorTable({
                     <span>
                       {head.label}
                       {(
-                        draftPricingMode && ["sow", "qty", "rateCard", "markupPrice"].includes(head.field)
+                        draftPricingMode && ["sow", "qty", "pricingType", "rateCard", "markupPrice"].includes(head.field)
                       ) || (
                         runningMode && ["drf_planning_upload", "drf_actual_upload", "drf_link_content"].includes(head.field)
                       ) ? <span className="ml-1 text-red-500">*</span> : null}

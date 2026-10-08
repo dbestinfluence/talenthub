@@ -1,4 +1,5 @@
 import { calculateTaxSummary } from "@/lib/tax";
+import { calculateProjectSubtotal, type ProjectPricingDetail } from "@/lib/project-pricing";
 
 export type DashboardPeriod = "this_month" | "last_month" | "last_3_months" | "last_6_months" | "this_year";
 
@@ -21,24 +22,18 @@ export function getPeriodRange(period: DashboardPeriod, now = new Date()) {
 }
 
 export function projectGrandTotal(
-  details: Array<{ drf_markup_price: unknown; drf_qty: number | null }>,
+  details: ProjectPricingDetail[],
   taxRate: unknown,
 ) {
-  const subtotal = details.reduce(
-    (sum, detail) => sum + Number(detail.drf_markup_price ?? 0) * Number(detail.drf_qty ?? 0),
-    0,
-  );
+  const subtotal = calculateProjectSubtotal(details);
   return calculateTaxSummary(subtotal, Number(taxRate ?? 11)).grandTotal;
 }
 
 export function projectFinancialSummary(
-  details: Array<{ drf_markup_price: unknown; drf_qty: number | null }>,
+  details: ProjectPricingDetail[],
   taxRate: unknown,
 ) {
-  const grossIncome = details.reduce(
-    (sum, detail) => sum + Number(detail.drf_markup_price ?? 0) * Number(detail.drf_qty ?? 0),
-    0,
-  );
+  const grossIncome = calculateProjectSubtotal(details);
   const taxDeduction = calculateTaxSummary(grossIncome, Number(taxRate ?? 11)).ppn;
   return { grossIncome, taxDeduction, netIncome: Math.max(0, grossIncome - taxDeduction) };
 }

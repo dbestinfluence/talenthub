@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { isSowForPlatform } from "@/lib/social-platform";
 import { calculateTaxSummary } from "@/lib/tax";
 import { getContentIdentity } from "@/lib/content-url";
+import { calculateProjectSubtotal } from "@/lib/project-pricing";
 
 async function authorize() {
   const session = await getServerSession(authOptions);
@@ -55,17 +56,26 @@ export async function GET(request: Request) {
 
     type ProjectDetail = (typeof details)[number];
 
-    const subtotal = details.reduce(
-      (sum: number, item: ProjectDetail) => sum + Number(item.drf_markup_price ?? 0) * Number(item.drf_qty),
-      0
-    );
+    const subtotal = calculateProjectSubtotal(details);
 
     const project = await prisma.trs_project.findUnique({ where: { prj_id: projectId } });
     const taxRate = Number(project?.prj_tax_rate ?? 11);
     const { dpp, ppn, grandTotal } = calculateTaxSummary(subtotal, taxRate);
 
     return NextResponse.json({
-      creators: details.map((item: ProjectDetail) => ({
+      creators: details.map((item: ProjectDetail, index: number) => {
+        const isBundle = item.drf_pricing_type === "BUNDLE" && Boolean(item.drf_bundle_id);
+        const isBundleLead = isBundle && details.findIndex(
+          (detail) => detail.drf_bundle_id === item.drf_bundle_id
+        ) === index;
+        const effectivePrice = isBundle
+          ? Number(item.drf_bundle_price ?? 0)
+          : Number(item.drf_markup_price ?? 0);
+        const total = isBundle
+          ? (isBundleLead ? effectivePrice : 0)
+          : effectivePrice * Number(item.drf_qty);
+
+        return ({
         ...item, // pass all original fields
         id: item.drf_id,
 
@@ -91,8 +101,8 @@ export async function GET(request: Request) {
         averageView: item.mst_creators.average_view,
         averageViewBrand: item.mst_creators.average_view_brand,
 
-        cpvAll: item.mst_creators.average_view ? Number(item.drf_markup_price ?? 0) / item.mst_creators.average_view : 0,
-        cpvBranded: item.mst_creators.average_view_brand ? Number(item.drf_markup_price ?? 0) / item.mst_creators.average_view_brand : 0,
+        cpvAll: item.mst_creators.average_view ? effectivePrice / item.mst_creators.average_view : 0,
+        cpvBranded: item.mst_creators.average_view_brand ? effectivePrice / item.mst_creators.average_view_brand : 0,
 
         sowId: item.drf_sow,
         sow: item.mst_sow?.sow_nama,
@@ -100,11 +110,16 @@ export async function GET(request: Request) {
         qty: item.drf_qty,
         rateCard: item.drf_rate === null ? null : Number(item.drf_rate),
         markupPrice: item.drf_markup_price === null ? null : Number(item.drf_markup_price),
+        pricingType: item.drf_pricing_type,
+        bundleId: item.drf_bundle_id,
+        bundlePrice: item.drf_bundle_price === null ? null : Number(item.drf_bundle_price),
+        isBundleLead,
         rate: Number(item.drf_markup_price ?? 0),
 
-        total: Number(item.drf_markup_price ?? 0) * Number(item.drf_qty),
+        total,
         hasReport: Boolean(item.detail_report),
-      })),
+      });
+      }),
 
       subtotal,
       dpp,
@@ -141,6 +156,79 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
+
+    if (body.pricingType !== undefined) {
+      const pricingType = String(body.pricingType).trim().toUpperCase();
+      if (!['NORMAL', 'BUNDLE'].includes(pricingType)) {
+        return NextResponse.json({ error: "Pricing Type must be Normal or Bundle" }, { status: 400 });
+      }
+      const detail = await prisma.dtl_project.findUnique({
+        where: { drf_id: id },
+        select: {
+          drf_bundle_id: true,
+          trs_project: { select: { prj_status: true } },
+        },
+      });
+      if (!detail) return NextResponse.json({ error: "Creator detail was not found" }, { status: 404 });
+      if (detail.trs_project.prj_status !== 1) {
+        return NextResponse.json({ error: "Pricing Type can only be changed while the project is in Draft" }, { status: 409 });
+      }
+
+      if (pricingType === 'BUNDLE') {
+        const bundleId = detail.drf_bundle_id ?? `bundle-${id}-${Date.now()}`;
+        await prisma.dtl_project.update({
+          where: { drf_id: id },
+          data: {
+            drf_pricing_type: 'BUNDLE',
+            drf_bundle_id: bundleId,
+            drf_bundle_price: null,
+            modiby: session.user.name ?? "admin",
+            modidate: new Date(),
+          },
+        });
+      } else if (detail.drf_bundle_id) {
+        await prisma.dtl_project.updateMany({
+          where: { drf_bundle_id: detail.drf_bundle_id },
+          data: {
+            drf_pricing_type: 'NORMAL',
+            drf_bundle_id: null,
+            drf_bundle_price: null,
+            modiby: session.user.name ?? "admin",
+            modidate: new Date(),
+          },
+        });
+      } else {
+        await prisma.dtl_project.update({
+          where: { drf_id: id },
+          data: { drf_pricing_type: 'NORMAL', modiby: session.user.name ?? "admin", modidate: new Date() },
+        });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.drf_bundle_price !== undefined) {
+      const bundlePrice = body.drf_bundle_price === null || body.drf_bundle_price === ""
+        ? null
+        : Number(body.drf_bundle_price);
+      if (bundlePrice !== null && (!Number.isFinite(bundlePrice) || bundlePrice <= 0)) {
+        return NextResponse.json({ error: "Bundle Price is required and must be greater than 0" }, { status: 400 });
+      }
+      const detail = await prisma.dtl_project.findUnique({
+        where: { drf_id: id },
+        select: { drf_pricing_type: true, drf_bundle_id: true, trs_project: { select: { prj_status: true } } },
+      });
+      if (!detail?.drf_bundle_id || detail.drf_pricing_type !== 'BUNDLE') {
+        return NextResponse.json({ error: "This row is not part of a bundle" }, { status: 400 });
+      }
+      if (detail.trs_project.prj_status !== 1) {
+        return NextResponse.json({ error: "Bundle Price can only be changed while the project is in Draft" }, { status: 409 });
+      }
+      await prisma.dtl_project.updateMany({
+        where: { drf_bundle_id: detail.drf_bundle_id },
+        data: { drf_bundle_price: bundlePrice, modiby: session.user.name ?? "admin", modidate: new Date() },
+      });
+      return NextResponse.json({ success: true, bundlePrice });
+    }
 
     if (body.platform !== undefined) {
       const platform = String(body.platform).trim().toLowerCase();
@@ -365,6 +453,9 @@ export async function POST(req: Request) {
           drf_qty: null,
           drf_rate: source.drf_rate,
           drf_markup_price: source.drf_markup_price,
+          drf_pricing_type: source.drf_pricing_type,
+          drf_bundle_id: source.drf_bundle_id,
+          drf_bundle_price: source.drf_bundle_price,
           drf_status: 0,
           creaby: session.user.name ?? "admin",
           creadate: new Date(),

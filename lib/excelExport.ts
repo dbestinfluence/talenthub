@@ -43,12 +43,19 @@ export const createExcelWorkbook = (
     "SOW",
     "Platform",
     "Qty",
+    "Price Type",
     "Rate Card",
+    "Mark Price",
     "Total",
   ];
 
   // 2. Map creator data to the desired format
-  const data = creators.map((creator, index) => ({
+  const data = creators.map((creator, index) => {
+    const isBundle = creator.pricingType === "BUNDLE";
+    const price = isBundle
+      ? toFiniteNumber(creator.bundlePrice)
+      : toFiniteNumber(creator.markupPrice);
+    return ({
     "No.": index + 1,
     "Influencer Name": creator.name ?? "-",
     Username: creator.username ?? "-",
@@ -61,14 +68,17 @@ export const createExcelWorkbook = (
     "Avg. Brand View": toFiniteNumber(creator.averageViewBrand),
     // Always calculate from the business source fields at export time. This
     // avoids stale/ formatted CPV values from the React table state.
-    "CPV All": calculateCpv(creator.markupPrice, creator.averageView),
-    "CPV Brand": calculateCpv(creator.markupPrice, creator.averageViewBrand),
+    "CPV All": calculateCpv(price, creator.averageView),
+    "CPV Brand": calculateCpv(price, creator.averageViewBrand),
     SOW: creator.sow ?? "-",
     Platform: creator.platform ?? "-",
     Qty: toFiniteNumber(creator.drf_qty ?? creator.qty),
-    "Rate Card": toFiniteNumber(creator.markupPrice),
-    Total: toFiniteNumber(creator.total),
-  }));
+    "Price Type": isBundle ? (creator.isBundleLead ? "Bundling" : "↳ Included") : "Reguler",
+    "Rate Card": isBundle && !creator.isBundleLead ? "—" : toFiniteNumber(creator.rateCard),
+    "Mark Price": isBundle && !creator.isBundleLead ? "Included" : price,
+    Total: isBundle && !creator.isBundleLead ? "Included" : toFiniteNumber(creator.total),
+    });
+  });
 
   // 3. Create worksheet and add data in sections
   const ws = XLSX.utils.aoa_to_sheet([
@@ -79,9 +89,9 @@ export const createExcelWorkbook = (
 
   // Merge title cells
   ws["!merges"] = [
-    XLSX.utils.decode_range("A1:O1"),
-    XLSX.utils.decode_range("A2:O2"),
-    XLSX.utils.decode_range("A3:O3"),
+    XLSX.utils.decode_range("A1:Q1"),
+    XLSX.utils.decode_range("A2:Q2"),
+    XLSX.utils.decode_range("A3:Q3"),
   ];
 
   // Add main data table with headers
@@ -136,7 +146,17 @@ export const createExcelWorkbook = (
 
       // Apply number formats to data table rows
       if (R > headerRowIndex) {
-        if (C >= 3 && C <= 14) {
+        const creator = creators[R - headerRowIndex - 1];
+        const isBundle = creator?.pricingType === "BUNDLE";
+        if (C >= 13 && C <= 16) {
+          ws[cell_ref].s.alignment = { horizontal: "center", vertical: "center" };
+        }
+        if (isBundle) {
+          ws[cell_ref].s.fill = {
+            fgColor: { rgb: creator.isBundleLead ? "FFFFE8D6" : "FFFFF5EC" },
+          };
+        }
+        if (C >= 3 && C <= 15) {
           // Columns from Followers to Total
           if (typeof ws[cell_ref].v === 'number') {
             ws[cell_ref].t = "n";
@@ -147,10 +167,12 @@ export const createExcelWorkbook = (
           // ER column
           ws[cell_ref].s.numFmt = "0.00%";
         }
-        if (C === 8 || C === 9 || C === 13 || C === 14) {
-          // Keep CPV, Rate Card, and Total numeric while displaying Rupiah.
-          ws[cell_ref].t = "n";
-          ws[cell_ref].s.numFmt = '"Rp" #,##0';
+        if (C === 8 || C === 9 || C === 14 || C === 15 || C === 16) {
+          // Keep monetary values numeric while allowing bundle-member labels.
+          if (typeof ws[cell_ref].v === "number") {
+            ws[cell_ref].t = "n";
+            ws[cell_ref].s.numFmt = '"Rp" #,##0';
+          }
         }
       }
     }
@@ -171,7 +193,9 @@ export const createExcelWorkbook = (
     { wch: 30 },  // SOW
     { wch: 15 },  // Platform
     { wch: 5 },   // Qty
+    { wch: 16 },  // Price Type
     { wch: 15 },  // Rate Card
+    { wch: 22 },  // Mark Price
     { wch: 15 },  // Total
   ];
 
@@ -179,7 +203,7 @@ export const createExcelWorkbook = (
   // Freeze header row
   ws["!view"] = { freezePanes: { y: 5 } };
   // Add autofilter
-  ws["!autofilter"] = { ref: `A5:O${data.length + 5}` };
+  ws["!autofilter"] = { ref: `A5:Q${data.length + 5}` };
 
   // 9. Create workbook
   const wb = XLSX.utils.book_new();
