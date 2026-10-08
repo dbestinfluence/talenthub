@@ -1,5 +1,4 @@
-// Pure, dependency-free helpers for turning scraped posts
-// into profile insights.
+// lib/insights.ts
 
 export interface RawPostLike {
   caption: string;
@@ -13,7 +12,6 @@ export interface RawPostLike {
   reposts?: number | null;
 
   postedAt: string;
-
   postUrl: string;
   thumbnailUrl?: string;
 }
@@ -49,16 +47,30 @@ export interface ProfileInsights {
 const HASHTAG_REGEX = /#([a-z0-9_]+)/gi;
 const MENTION_REGEX = /@([a-z0-9_.]+)/gi;
 
-export function extractHashtags(caption: string): string[] {
-  const matches = (caption ?? "").matchAll(HASHTAG_REGEX);
+export function extractHashtags(
+  caption: string
+): string[] {
+  const matches = (caption ?? "").matchAll(
+    HASHTAG_REGEX
+  );
 
-  return Array.from(matches, (match) => match[1].toLowerCase());
+  return Array.from(
+    matches,
+    (match) => match[1].toLowerCase()
+  );
 }
 
-export function extractMentions(caption: string): string[] {
-  const matches = (caption ?? "").matchAll(MENTION_REGEX);
+export function extractMentions(
+  caption: string
+): string[] {
+  const matches = (caption ?? "").matchAll(
+    MENTION_REGEX
+  );
 
-  return Array.from(matches, (match) => match[1].toLowerCase());
+  return Array.from(
+    matches,
+    (match) => match[1].toLowerCase()
+  );
 }
 
 function topN<T extends string>(
@@ -68,7 +80,10 @@ function topN<T extends string>(
   const counts = new Map<T, number>();
 
   for (const value of values) {
-    counts.set(value, (counts.get(value) ?? 0) + 1);
+    counts.set(
+      value,
+      (counts.get(value) ?? 0) + 1
+    );
   }
 
   return Array.from(counts.entries())
@@ -80,21 +95,35 @@ function topN<T extends string>(
     }));
 }
 
-export function filterPostsByRange<T extends RawPostLike>(
+export function filterPostsByRange<
+  T extends RawPostLike
+>(
   posts: T[],
   days: number
 ): T[] {
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const cutoff =
+    Date.now() - days * 24 * 60 * 60 * 1000;
 
   return posts.filter((post) => {
-    const postedTime = new Date(post.postedAt).getTime();
+    const postedTime = new Date(
+      post.postedAt
+    ).getTime();
 
-    return !Number.isNaN(postedTime) && postedTime >= cutoff;
+    return (
+      !Number.isNaN(postedTime) &&
+      postedTime >= cutoff
+    );
   });
 }
 
-function safeMetric(value: number | null | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+function safeMetric(
+  value: number | null | undefined
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0
+  ) {
     return 0;
   }
 
@@ -103,15 +132,19 @@ function safeMetric(value: number | null | undefined): number {
 
 function averageOf(
   posts: RawPostLike[],
-  pick: (post: RawPostLike) => number | null | undefined
+  pick: (
+    post: RawPostLike
+  ) => number | null | undefined
 ): number {
   if (posts.length === 0) {
     return 0;
   }
 
-  const sum = posts.reduce((total, post) => {
-    return total + safeMetric(pick(post));
-  }, 0);
+  const sum = posts.reduce(
+    (total, post) =>
+      total + safeMetric(pick(post)),
+    0
+  );
 
   return sum / posts.length;
 }
@@ -125,80 +158,101 @@ export function computeInsightsFromPosts(
 ): ProfileInsights {
   const postCount = posts.length;
 
+  if (postCount === 0) {
+    return {
+      totalPosts: totalPostFallback,
+
+      avgLikes: 0,
+      avgComments: 0,
+      avgViews: 0,
+      avgShares: 0,
+      avgSaves: 0,
+      avgReposts: 0,
+
+      erFollowers: 0,
+      erViews: 0,
+      erTalenthub: 0,
+
+      topHashtags: [],
+      topMentions: [],
+    };
+  }
+
   /*
-   * ========================================
-   * AVERAGE SEMUA POST
-   * ========================================
-   *
-   * Digunakan untuk:
-   * - Average Likes
-   * - Average Comments
-   * - Average Shares
-   * - Average Saves
-   * - Average Reposts
-   * - ER by Followers
-   * - ER by TalentHub
-   *
-   * Semua post dalam periode terpilih digunakan,
-   * termasuk feed/foto yang tidak mempunyai views.
+   * Rata-rata seluruh postingan.
+   * Post foto tanpa views tetap dihitung,
+   * dengan nilai views = 0.
    */
+  const avgLikes = averageOf(
+    posts,
+    (post) => post.likes
+  );
 
-  const avgLikes = averageOf(posts, (post) => post.likes);
+  const avgComments = averageOf(
+    posts,
+    (post) => post.comments
+  );
 
-  const avgComments = averageOf(posts, (post) => post.comments);
+  const avgViewsAllPosts = averageOf(
+    posts,
+    (post) => post.views
+  );
 
-  const avgShares = averageOf(posts, (post) => post.shares);
+  const avgShares = averageOf(
+    posts,
+    (post) => post.shares
+  );
 
-  const avgSaves = averageOf(posts, (post) => post.saves);
+  const avgSaves = averageOf(
+    posts,
+    (post) => post.saves
+  );
 
-  const avgReposts = averageOf(posts, (post) => post.reposts);
+  const avgReposts = averageOf(
+    posts,
+    (post) => post.reposts
+  );
 
   /*
-   * ========================================
-   * POST YANG MEMPUNYAI DATA VIEWS
-   * ========================================
-   *
-   * Hanya digunakan untuk:
-   * - Average Views pada kotak performance
-   * - ER by Views
+   * Khusus ER by Views:
+   * hanya postingan yang memiliki views > 0.
    */
+  const viewPosts = posts.filter(
+    (post) => safeMetric(post.views) > 0
+  );
 
-  const viewPosts = posts.filter((post) => {
-    return safeMetric(post.views) > 0;
-  });
+  const avgViewsForViewPosts = averageOf(
+    viewPosts,
+    (post) => post.views
+  );
+
+  const avgLikesView = averageOf(
+    viewPosts,
+    (post) => post.likes
+  );
+
+  const avgCommentsView = averageOf(
+    viewPosts,
+    (post) => post.comments
+  );
+
+  const avgSharesView = averageOf(
+    viewPosts,
+    (post) => post.shares
+  );
+
+  const avgSavesView = averageOf(
+    viewPosts,
+    (post) => post.saves
+  );
+
+  const avgRepostsView = averageOf(
+    viewPosts,
+    (post) => post.reposts
+  );
 
   /*
-   * Average Views yang ditampilkan pada kotak.
-   *
-   * Hanya post dengan views > 0 yang digunakan,
-   * sehingga feed tanpa data views tidak menurunkan
-   * Average Views.
-   */
-
-  const avgViews = averageOf(viewPosts, (post) => post.views);
-
-  /*
-   * Seluruh komponen pembilang ER by Views
-   * harus berasal dari subset yang sama, yaitu
-   * viewPosts.
-   */
-
-  const avgLikesView = averageOf(viewPosts, (post) => post.likes);
-
-  const avgCommentsView = averageOf(viewPosts, (post) => post.comments);
-
-  const avgSharesView = averageOf(viewPosts, (post) => post.shares);
-
-  const avgSavesView = averageOf(viewPosts, (post) => post.saves);
-
-  const avgRepostsView = averageOf(viewPosts, (post) => post.reposts);
-
-  /*
-   * ========================================
-   * ER BY FOLLOWERS
-   * ========================================
-   *
-   * Formula:
+   * ER by Followers:
    *
    * (
    *   avg likes
@@ -207,39 +261,30 @@ export function computeInsightsFromPosts(
    *   + avg saves
    *   + avg reposts
    * )
-   * ÷ followers
+   * / followers
    * × 100
-   *
-   * Menggunakan semua post dalam periode.
    */
-
   const engagementAverageAllPosts =
-    avgLikes + avgComments + avgShares + avgSaves + avgReposts;
+    avgLikes +
+    avgComments +
+    avgShares +
+    avgSaves +
+    avgReposts;
 
   const erFollowers =
-    followers > 0 ? (engagementAverageAllPosts / followers) * 100 : 0;
+    followers > 0
+      ? (
+          engagementAverageAllPosts /
+          followers
+        ) * 100
+      : 0;
 
   /*
-   * ========================================
-   * ER BY VIEWS
-   * ========================================
+   * ER by Views:
    *
-   * Formula:
-   *
-   * (
-   *   avg likes
-   *   + avg comments
-   *   + avg shares
-   *   + avg saves
-   *   + avg reposts
-   * )
-   * ÷ avg views
-   * × 100
-   *
-   * Seluruh metrik hanya berasal dari post
-   * yang mempunyai views > 0.
+   * Seluruh komponennya hanya memakai
+   * postingan yang mempunyai views.
    */
-
   const engagementAverageViewPosts =
     avgLikesView +
     avgCommentsView +
@@ -248,14 +293,15 @@ export function computeInsightsFromPosts(
     avgRepostsView;
 
   const erViews =
-    avgViews > 0 ? (engagementAverageViewPosts / avgViews) * 100 : 0;
+    avgViewsForViewPosts > 0
+      ? (
+          engagementAverageViewPosts /
+          avgViewsForViewPosts
+        ) * 100
+      : 0;
 
   /*
-   * ========================================
-   * ER BY TALENTHUB
-   * ========================================
-   *
-   * Formula:
+   * ER by TalentHub:
    *
    * (
    *   avg likes
@@ -265,68 +311,79 @@ export function computeInsightsFromPosts(
    *   + avg views
    *   + avg reposts
    * )
-   * ÷ followers
+   * / followers
    *
    * Tidak dikalikan 100.
-   *
-   * Semua post dalam periode digunakan.
-   * Feed tanpa views tetap masuk sebagai post,
-   * dengan nilai views = 0.
+   * Views dirata-ratakan dari seluruh postingan.
    */
-
   const talenthubAverageAllPosts =
-    avgLikes + avgComments + avgShares + avgSaves + avgViews + avgReposts;
+    avgLikes +
+    avgComments +
+    avgShares +
+    avgSaves +
+    avgViewsAllPosts +
+    avgReposts;
 
-  const erTalenthub = followers > 0 ? talenthubAverageAllPosts / followers : 0;
+  const erTalenthub =
+    followers > 0
+      ? talenthubAverageAllPosts / followers
+      : 0;
 
-  /*
-   * ========================================
-   * HASHTAGS DAN MENTIONS
-   * ========================================
-   */
+  const allHashtags = posts.flatMap(
+    (post) =>
+      extractHashtags(post.caption ?? "")
+  );
 
-  const allHashtags = posts.flatMap((post) => extractHashtags(post.caption));
+  const allMentions = posts.flatMap(
+    (post) =>
+      extractMentions(post.caption ?? "")
+  );
 
-  const allMentions = posts.flatMap((post) => extractMentions(post.caption));
-
-  const topHashtags = topN(allHashtags, hashtagLimit).map(({ key, count }) => ({
+  const topHashtags = topN(
+    allHashtags,
+    hashtagLimit
+  ).map(({ key, count }) => ({
     tag: key,
     count,
   }));
 
-  const topMentions = topN(allMentions, mentionLimit).map(({ key, count }) => ({
+  const topMentions = topN(
+    allMentions,
+    mentionLimit
+  ).map(({ key, count }) => ({
     mention: key,
     count,
   }));
 
   return {
-    // Untuk filter yang kosong, tampilkan 0.
-    // Fallback hanya digunakan ketika memang diberikan
-    // dari proses perhitungan profile utama.
-    totalPosts: postCount > 0 ? postCount : totalPostFallback,
+    totalPosts: postCount,
 
     avgLikes: Math.round(avgLikes),
-
     avgComments: Math.round(avgComments),
 
-    // Average Views yang ditampilkan tetap berdasarkan
-    // post yang mempunyai data views.
-    avgViews: Math.round(avgViews),
+    // Tampilan Average Views hanya memakai
+    // postingan yang mempunyai views.
+    avgViews: Math.round(
+      avgViewsForViewPosts
+    ),
 
     avgShares: Math.round(avgShares),
-
     avgSaves: Math.round(avgSaves),
-
     avgReposts: Math.round(avgReposts),
 
-    erFollowers: Number(erFollowers.toFixed(2)),
+    erFollowers: Number(
+      erFollowers.toFixed(2)
+    ),
 
-    erViews: Number(erViews.toFixed(2)),
+    erViews: Number(
+      erViews.toFixed(2)
+    ),
 
-    erTalenthub: Number(erTalenthub.toFixed(2)),
+    erTalenthub: Number(
+      erTalenthub.toFixed(2)
+    ),
 
     topHashtags,
-
     topMentions,
   };
 }

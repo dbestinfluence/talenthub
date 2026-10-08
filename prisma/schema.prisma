@@ -170,13 +170,13 @@ model mst_dbest {
   bst_id             Int           @id @default(autoincrement())
   bst_nama           String?       @db.VarChar(100)
   bst_alamat         String?       @db.VarChar(100)
-  bst_approver_name  String?       @db.VarChar(100)
-  bst_approver_title String?       @db.VarChar(100)
   bst_status         Int?          @default(1)
   creaby             String?       @db.VarChar(20)
   creadate           DateTime?     @default(now()) @db.Timestamp(6)
   modiby             String?       @db.VarChar(20)
   modidate           DateTime?     @default(now()) @db.Timestamp(6)
+  bst_approver_name  String?       @db.VarChar(100)
+  bst_approver_title String?       @db.VarChar(100)
   trs_project        trs_project[]
 }
 
@@ -193,7 +193,6 @@ model trs_project {
   prj_nama             String        @db.VarChar(100)
   prj_quotationno      String?       @db.VarChar(100)
   prj_invoiceno        String?       @db.VarChar(100)
-  prj_po_no            String?       @db.VarChar(100)
   prj_dstartdate       DateTime      @db.Date
   prj_denddate         DateTime      @db.Date
   prj_qstartdate       DateTime?     @db.Date
@@ -218,6 +217,7 @@ model trs_project {
   prj_project_pic      String?       @db.VarChar(100)
   prj_quotation_phone  String?       @db.VarChar(30)
   prj_quotation_pic    String?       @db.VarChar(100)
+  prj_po_no            String?       @db.VarChar(100)
   dtl_project          dtl_project[]
   mst_brand            mst_brand     @relation(fields: [prj_brand], references: [brd_id], map: "fk_trs_project_brand")
   mst_dbest            mst_dbest?    @relation(fields: [prj_dbestid], references: [bst_id], onUpdate: NoAction, map: "fk_trs_project_dbest")

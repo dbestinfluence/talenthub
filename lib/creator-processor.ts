@@ -76,9 +76,9 @@ export interface SeedEntry {
 
 // hanya menambah biaya untuk post baru/belum ter-enrich.
 
-const SHARES_SAVES_ENRICHMENT_LIMIT = 20;
+const SHARES_SAVES_ENRICHMENT_LIMIT = 12;
 
-const TOP_CONTENT_LIMIT = 5;
+const TOP_CONTENT_LIMIT = 6;
 
 function contentScore(post: RawPost): number {
 
