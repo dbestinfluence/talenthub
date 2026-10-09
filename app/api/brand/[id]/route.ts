@@ -13,6 +13,16 @@ export async function PUT(req: Request, context: RouteContext) {
 
     const { id } = await context.params;
     const body = await req.json();
+    const approvers = [1, 2, 3, 4, 5].map((slot) => ({
+      name: String(body[slot === 1 ? "brd_approver_name" : `brd_approver${slot}_name`] ?? "").trim(),
+      title: String(body[slot === 1 ? "brd_approver_title" : `brd_approver${slot}_title`] ?? "").trim(),
+    }));
+    if (approvers.some((approver) => Boolean(approver.name) !== Boolean(approver.title))) {
+      return NextResponse.json({ error: "Each approver must have both a name and title" }, { status: 400 });
+    }
+    if (!approvers.some((approver) => approver.name && approver.title)) {
+      return NextResponse.json({ error: "At least one approver is required" }, { status: 400 });
+    }
 
     const brand = await prisma.mst_brand.update({
       where: { brd_id: parseInt(id) },
@@ -28,6 +38,16 @@ export async function PUT(req: Request, context: RouteContext) {
         brd_pic2_phone: body.brd_pic2_phone,
         brd_pic3: body.brd_pic3,
         brd_pic3_phone: body.brd_pic3_phone,
+        brd_approver_name: approvers[0].name || null,
+        brd_approver_title: approvers[0].title || null,
+        brd_approver2_name: approvers[1].name || null,
+        brd_approver2_title: approvers[1].title || null,
+        brd_approver3_name: approvers[2].name || null,
+        brd_approver3_title: approvers[2].title || null,
+        brd_approver4_name: approvers[3].name || null,
+        brd_approver4_title: approvers[3].title || null,
+        brd_approver5_name: approvers[4].name || null,
+        brd_approver5_title: approvers[4].title || null,
         modiby: session.user.name || "admin",
         modidate: new Date(),
       },

@@ -53,24 +53,34 @@ model items {
 }
 
 model mst_brand {
-  brd_id         Int           @id @default(autoincrement())
-  brd_initial    String?       @db.VarChar(5)
-  brd_nama       String?       @db.VarChar(100)
-  brd_alamat     String?       @db.VarChar(300)
-  brd_email      String?       @db.VarChar(100)
-  brd_notelp     String?       @db.VarChar(15)
-  brd_pic1       String?       @db.VarChar(100)
-  brd_pic2       String?       @db.VarChar(100)
-  brd_pic3       String?       @db.VarChar(100)
-  brd_status     Int?          @default(1)
-  creaby         String?       @db.VarChar(20)
-  creadate       DateTime?     @default(now()) @db.Timestamp(6)
-  modiby         String?       @db.VarChar(20)
-  modidate       DateTime?     @default(now()) @db.Timestamp(6)
-  brd_pic1_phone String?       @db.VarChar(30)
-  brd_pic2_phone String?       @db.VarChar(30)
-  brd_pic3_phone String?       @db.VarChar(30)
-  trs_project    trs_project[]
+  brd_id              Int           @id @default(autoincrement())
+  brd_initial         String?       @db.VarChar(5)
+  brd_nama            String?       @db.VarChar(100)
+  brd_alamat          String?       @db.VarChar(300)
+  brd_email           String?       @db.VarChar(100)
+  brd_notelp          String?       @db.VarChar(15)
+  brd_pic1            String?       @db.VarChar(100)
+  brd_pic2            String?       @db.VarChar(100)
+  brd_pic3            String?       @db.VarChar(100)
+  brd_status          Int?          @default(1)
+  creaby              String?       @db.VarChar(20)
+  creadate            DateTime?     @default(now()) @db.Timestamp(6)
+  modiby              String?       @db.VarChar(20)
+  modidate            DateTime?     @default(now()) @db.Timestamp(6)
+  brd_pic1_phone      String?       @db.VarChar(30)
+  brd_pic2_phone      String?       @db.VarChar(30)
+  brd_pic3_phone      String?       @db.VarChar(30)
+  brd_approver_name   String?       @db.VarChar(100)
+  brd_approver_title  String?       @db.VarChar(100)
+  brd_approver2_name  String?       @db.VarChar(100)
+  brd_approver2_title String?       @db.VarChar(100)
+  brd_approver3_name  String?       @db.VarChar(100)
+  brd_approver3_title String?       @db.VarChar(100)
+  brd_approver4_name  String?       @db.VarChar(100)
+  brd_approver4_title String?       @db.VarChar(100)
+  brd_approver5_name  String?       @db.VarChar(100)
+  brd_approver5_title String?       @db.VarChar(100)
+  trs_project         trs_project[]
 }
 
 model mst_payment {
@@ -167,17 +177,15 @@ model mst_cities {
 }
 
 model mst_dbest {
-  bst_id             Int           @id @default(autoincrement())
-  bst_nama           String?       @db.VarChar(100)
-  bst_alamat         String?       @db.VarChar(100)
-  bst_status         Int?          @default(1)
-  creaby             String?       @db.VarChar(20)
-  creadate           DateTime?     @default(now()) @db.Timestamp(6)
-  modiby             String?       @db.VarChar(20)
-  modidate           DateTime?     @default(now()) @db.Timestamp(6)
-  bst_approver_name  String?       @db.VarChar(100)
-  bst_approver_title String?       @db.VarChar(100)
-  trs_project        trs_project[]
+  bst_id      Int           @id @default(autoincrement())
+  bst_nama    String?       @db.VarChar(100)
+  bst_alamat  String?       @db.VarChar(100)
+  bst_status  Int?          @default(1)
+  creaby      String?       @db.VarChar(20)
+  creadate    DateTime?     @default(now()) @db.Timestamp(6)
+  modiby      String?       @db.VarChar(20)
+  modidate    DateTime?     @default(now()) @db.Timestamp(6)
+  trs_project trs_project[]
 }
 
 model mst_general_filters {

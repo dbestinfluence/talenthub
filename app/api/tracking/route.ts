@@ -159,6 +159,13 @@ if (id) {
     brandContact: project.mst_brand?.brd_notelp ?? "",
     brandEmail: project.mst_brand?.brd_email ?? "",
     brandAddress: project.mst_brand?.brd_alamat ?? "",
+    brandApprovers: [
+      { name: project.mst_brand?.brd_approver_name ?? "", title: project.mst_brand?.brd_approver_title ?? "" },
+      { name: project.mst_brand?.brd_approver2_name ?? "", title: project.mst_brand?.brd_approver2_title ?? "" },
+      { name: project.mst_brand?.brd_approver3_name ?? "", title: project.mst_brand?.brd_approver3_title ?? "" },
+      { name: project.mst_brand?.brd_approver4_name ?? "", title: project.mst_brand?.brd_approver4_title ?? "" },
+      { name: project.mst_brand?.brd_approver5_name ?? "", title: project.mst_brand?.brd_approver5_title ?? "" },
+    ].filter((approver) => approver.name.trim() && approver.title.trim()),
     brandPic:
       project.mst_brand?.brd_pic1?.trim() ||
       project.mst_brand?.brd_pic2?.trim() ||
@@ -186,8 +193,6 @@ if (id) {
       ? {
           name: project.mst_dbest.bst_nama ?? "",
           address: project.mst_dbest.bst_alamat ?? "",
-          approverName: project.mst_dbest.bst_approver_name ?? "",
-          approverTitle: project.mst_dbest.bst_approver_title ?? "",
         }
       : null,
 

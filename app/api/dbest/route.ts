@@ -25,12 +25,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const name = String(body.bst_nama ?? "").trim();
     const address = String(body.bst_alamat ?? "").trim();
-    const approverName = String(body.bst_approver_name ?? "").trim();
-    const approverTitle = String(body.bst_approver_title ?? "").trim();
-    if (!name || !address || !approverName || !approverTitle) return NextResponse.json({ error: "Name, address, approver name, and approver title are required" }, { status: 400 });
+    if (!name || !address) return NextResponse.json({ error: "Name and address are required" }, { status: 400 });
     const data = await prisma.$transaction(async (tx) => {
       await tx.mst_dbest.updateMany({ where: { bst_status: 1 }, data: { bst_status: 2, modiby: session.user.name || "admin", modidate: new Date() } });
-      const created = await tx.mst_dbest.create({ data: { bst_nama: name, bst_alamat: address, bst_approver_name: approverName, bst_approver_title: approverTitle, bst_status: 1, creaby: session.user.name || "admin" } });
+      const created = await tx.mst_dbest.create({ data: { bst_nama: name, bst_alamat: address, bst_status: 1, creaby: session.user.name || "admin" } });
       await tx.trs_project.updateMany({ where: { prj_dbestid: null }, data: { prj_dbestid: created.bst_id } });
       return created;
     });

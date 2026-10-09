@@ -343,7 +343,7 @@ export default function QuotationSection({
     let currentY = (doc as any).lastAutoTable.finalY;
 
     // Cek jika sisa halaman tidak cukup untuk footer, maka buat halaman baru
-    if (currentY > pageHeight - 120) { // 120mm = estimasi tinggi footer
+    if (currentY > pageHeight - 160) { // Reserve space for terms and the adaptive signature table.
       doc.addPage();
       drawPageBorder(); // Gambar HANYA bingkai di halaman baru yang dibuat manual
       currentY = 20; // Reset posisi Y di halaman baru
@@ -444,13 +444,23 @@ export default function QuotationSection({
     // =====================================================
     // 8. SIGNATURE TABLE
     // =====================================================
-    const signatureX = 95;
-    const signatureY = termsY + 30;
-    const signatureWidth = contentRight - signatureX;
+    const brandApprovers = (Array.isArray(projectDetail?.brandApprovers)
+      ? projectDetail.brandApprovers
+      : []
+    ).filter(
+      (approver: { name?: string; title?: string }) =>
+        String(approver?.name ?? "").trim() &&
+        String(approver?.title ?? "").trim()
+    ) as Array<{ name: string; title: string }>;
+    const displayedApprovers = brandApprovers.length > 0
+      ? brandApprovers.slice(0, 5)
+      : [{ name: "-", title: "-" }];
 
-    const col1 = signatureWidth / 3;
-    const col2 = signatureWidth / 3;
-    const col3 = signatureWidth / 3;
+    const signatureX = contentLeft - 2;
+    const signatureY = termsY + 60;
+    const signatureWidth = contentRight - signatureX;
+    const providedWidth = 30;
+    const approverWidth = (signatureWidth - providedWidth) / displayedApprovers.length;
 
     const headerHeight = 7;
     const signHeight = 30;
@@ -460,38 +470,47 @@ export default function QuotationSection({
     doc.setLineWidth(0.35);
 
     // HEADER
-    doc.rect(signatureX, signatureY, col1, headerHeight);
-
-    doc.rect(signatureX + col1, signatureY, col2 + col3, headerHeight);
+    doc.rect(signatureX, signatureY, providedWidth, headerHeight);
+    doc.rect(signatureX + providedWidth, signatureY, signatureWidth - providedWidth, headerHeight);
 
     // AREA TANDA TANGAN
-    doc.rect(signatureX, signatureY + headerHeight, col1, signHeight);
-
-    doc.rect(signatureX + col1, signatureY + headerHeight, col2, signHeight);
-    doc.rect(signatureX + col1 + col2, signatureY + headerHeight, col3, signHeight);
+    doc.rect(signatureX, signatureY + headerHeight, providedWidth, signHeight);
+    displayedApprovers.forEach((_, index) => {
+      doc.rect(
+        signatureX + providedWidth + index * approverWidth,
+        signatureY + headerHeight,
+        approverWidth,
+        signHeight
+      );
+    });
 
     // NAMA
     doc.rect(
       signatureX,
       signatureY + headerHeight + signHeight,
-      col1,
+      providedWidth,
       nameHeight
     );
-
-    doc.rect(signatureX + col1, signatureY + headerHeight + signHeight, col2, nameHeight);
-    doc.rect(signatureX + col1 + col2, signatureY + headerHeight + signHeight, col3, nameHeight);
+    displayedApprovers.forEach((_, index) => {
+      doc.rect(
+        signatureX + providedWidth + index * approverWidth,
+        signatureY + headerHeight + signHeight,
+        approverWidth,
+        nameHeight
+      );
+    });
 
     // HEADER TEXT
     doc.setFont("times", "bold");
     doc.setFontSize(10);
 
-    doc.text("Provided by", signatureX + col1 / 2, signatureY + 5, {
+    doc.text("Provided by", signatureX + providedWidth / 2, signatureY + 5, {
       align: "center",
     });
 
     doc.text(
       "Approved By",
-      signatureX + col1 + (col2 + col3) / 2,
+      signatureX + providedWidth + (signatureWidth - providedWidth) / 2,
       signatureY + 5,
       { align: "center" }
     );
@@ -499,18 +518,22 @@ export default function QuotationSection({
     // NAMA
     const nameY = signatureY + headerHeight + signHeight + 6;
 
-    doc.setFontSize(9);
-
-    doc.text("Donna Bella", signatureX + col1 / 2, nameY, { align: "center" });
-
-    doc.text(
-      String(projectDetail?.quotationPic ?? "-").trim() || "-",
-      signatureX + col1 + col2 / 2,
-      nameY,
-      { align: "center", maxWidth: col2 - 4 }
-    );
-    doc.text(String(projectDetail?.dbest?.approverName ?? "-").trim() || "-", signatureX + col1 + col2 + col3 / 2, nameY, { align: "center", maxWidth: col3 - 4 });
-    doc.text(String(projectDetail?.dbest?.approverTitle ?? "-").trim() || "-", signatureX + col1 + col2 + col3 / 2, nameY + 5, { align: "center", maxWidth: col3 - 4 });
+    doc.setFontSize(displayedApprovers.length >= 4 ? 7 : 9);
+    doc.text("Donna Bella", signatureX + providedWidth / 2, nameY, {
+      align: "center",
+      maxWidth: providedWidth - 4,
+    });
+    displayedApprovers.forEach((approver, index) => {
+      const centerX = signatureX + providedWidth + index * approverWidth + approverWidth / 2;
+      doc.text(String(approver.name).trim(), centerX, nameY, {
+        align: "center",
+        maxWidth: approverWidth - 3,
+      });
+      doc.text(String(approver.title).trim(), centerX, nameY + 5, {
+        align: "center",
+        maxWidth: approverWidth - 3,
+      });
+    });
 
     // =====================================================
     // 9. SAVE PDF
@@ -523,8 +546,8 @@ export default function QuotationSection({
       await showAlertValidationError("Complete Quotation No before exporting the quotation.");
       return;
     }
-    if (!String(projectDetail?.dbest?.approverName ?? "").trim()) {
-      await showAlertValidationError("Configure the quotation approver in Master Data DBest before exporting.");
+    if (!Array.isArray(projectDetail?.brandApprovers) || projectDetail.brandApprovers.length === 0) {
+      await showAlertValidationError("Configure at least one approver name and title in Master Data Brand before exporting.");
       return;
     }
     (await createQuotationPdf()).save(getQuotationFileName());

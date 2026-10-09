@@ -27,8 +27,18 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const { brd_initial, brd_nama, brd_alamat, brd_email, brd_notelp, brd_pic1, brd_pic1_phone, brd_pic2, brd_pic2_phone, brd_pic3, brd_pic3_phone } = body;
+    const approvers = [1, 2, 3, 4, 5].map((slot) => ({
+      name: String(body[slot === 1 ? "brd_approver_name" : `brd_approver${slot}_name`] ?? "").trim(),
+      title: String(body[slot === 1 ? "brd_approver_title" : `brd_approver${slot}_title`] ?? "").trim(),
+    }));
 
     if (!brd_nama) return NextResponse.json({ error: "Brand name is required" }, { status: 400 });
+    if (approvers.some((approver) => Boolean(approver.name) !== Boolean(approver.title))) {
+      return NextResponse.json({ error: "Each approver must have both a name and title" }, { status: 400 });
+    }
+    if (!approvers.some((approver) => approver.name && approver.title)) {
+      return NextResponse.json({ error: "At least one approver is required" }, { status: 400 });
+    }
 
     const brand = await prisma.mst_brand.create({
       data: {
@@ -43,6 +53,16 @@ export async function POST(req: Request) {
         brd_pic2_phone,
         brd_pic3,
         brd_pic3_phone,
+        brd_approver_name: approvers[0].name || null,
+        brd_approver_title: approvers[0].title || null,
+        brd_approver2_name: approvers[1].name || null,
+        brd_approver2_title: approvers[1].title || null,
+        brd_approver3_name: approvers[2].name || null,
+        brd_approver3_title: approvers[2].title || null,
+        brd_approver4_name: approvers[3].name || null,
+        brd_approver4_title: approvers[3].title || null,
+        brd_approver5_name: approvers[4].name || null,
+        brd_approver5_title: approvers[4].title || null,
         brd_status: 1,
         creaby: session.user.name || "admin",
       },

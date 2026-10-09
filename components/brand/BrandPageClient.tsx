@@ -16,8 +16,23 @@ type Brand = {
   brd_pic2_phone: string | null;
   brd_pic3: string | null;
   brd_pic3_phone: string | null;
+  brd_approver_name: string | null;
+  brd_approver_title: string | null;
+  brd_approver2_name: string | null;
+  brd_approver2_title: string | null;
+  brd_approver3_name: string | null;
+  brd_approver3_title: string | null;
+  brd_approver4_name: string | null;
+  brd_approver4_title: string | null;
+  brd_approver5_name: string | null;
+  brd_approver5_title: string | null;
   brd_status: number | null;
 };
+
+type BrandApprover = { name: string; title: string };
+
+const emptyApprovers = (): BrandApprover[] =>
+  Array.from({ length: 5 }, () => ({ name: "", title: "" }));
 
 type ToastState = {
   type: "success" | "error";
@@ -37,6 +52,7 @@ export default function BrandPageClient() {
   const [brdPic2Phone, setBrdPic2Phone] = useState("");
   const [brdPic3, setBrdPic3] = useState("");
   const [brdPic3Phone, setBrdPic3Phone] = useState("");
+  const [brandApprovers, setBrandApprovers] = useState<BrandApprover[]>(emptyApprovers);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,9 +130,23 @@ export default function BrandPageClient() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validasi field wajib (sesuaikan dengan kebutuhan Anda, misal brd_nama wajib)
-    if (!brdNama) {
+    const hasIncompleteApprover = brandApprovers.some(
+      (approver) => Boolean(approver.name.trim()) !== Boolean(approver.title.trim())
+    );
+    const completedApprovers = brandApprovers.filter(
+      (approver) => approver.name.trim() && approver.title.trim()
+    );
+
+    if (!brdNama.trim()) {
       showToast("error", "Brand name is required");
+      return;
+    }
+    if (hasIncompleteApprover) {
+      showToast("error", "Complete both the name and title for each approver used");
+      return;
+    }
+    if (completedApprovers.length === 0) {
+      showToast("error", "Add at least one quotation approver");
       return;
     }
 
@@ -144,6 +174,16 @@ export default function BrandPageClient() {
             brd_pic2_phone: brdPic2Phone,
             brd_pic3: brdPic3,
             brd_pic3_phone: brdPic3Phone,
+            brd_approver_name: brandApprovers[0].name,
+            brd_approver_title: brandApprovers[0].title,
+            brd_approver2_name: brandApprovers[1].name,
+            brd_approver2_title: brandApprovers[1].title,
+            brd_approver3_name: brandApprovers[2].name,
+            brd_approver3_title: brandApprovers[2].title,
+            brd_approver4_name: brandApprovers[3].name,
+            brd_approver4_title: brandApprovers[3].title,
+            brd_approver5_name: brandApprovers[4].name,
+            brd_approver5_title: brandApprovers[4].title,
           }),
         }
       );
@@ -248,6 +288,13 @@ export default function BrandPageClient() {
     setBrdPic2Phone(brand.brd_pic2_phone ?? "");
     setBrdPic3(brand.brd_pic3 ?? "");
     setBrdPic3Phone(brand.brd_pic3_phone ?? "");
+    setBrandApprovers([
+      { name: brand.brd_approver_name ?? "", title: brand.brd_approver_title ?? "" },
+      { name: brand.brd_approver2_name ?? "", title: brand.brd_approver2_title ?? "" },
+      { name: brand.brd_approver3_name ?? "", title: brand.brd_approver3_title ?? "" },
+      { name: brand.brd_approver4_name ?? "", title: brand.brd_approver4_title ?? "" },
+      { name: brand.brd_approver5_name ?? "", title: brand.brd_approver5_title ?? "" },
+    ]);
 
     setError("");
   }
@@ -266,6 +313,7 @@ export default function BrandPageClient() {
     setBrdPic2Phone("");
     setBrdPic3("");
     setBrdPic3Phone("");
+    setBrandApprovers(emptyApprovers());
 
     setError("");
   }
@@ -306,8 +354,6 @@ export default function BrandPageClient() {
                 <p className="text-sm text-slate-500">Create or update a brand</p>
               </div>
             </div>
-
-            <div></div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <input
@@ -362,13 +408,54 @@ export default function BrandPageClient() {
               ))}
             </div>
 
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700">Quotation Approval</p>
+              <p className="text-xs text-slate-500">
+                Fill only the approvers required for this brand (maximum 5).
+              </p>
+              {brandApprovers.map((approver, index) => (
+                <div key={index} className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    placeholder={`Approver ${index + 1} Name`}
+                    value={approver.name}
+                    onChange={(event) =>
+                      setBrandApprovers((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? { ...item, name: event.target.value }
+                            : item
+                        )
+                      )
+                    }
+                    maxLength={100}
+                    className="h-10 w-full rounded-lg border border-slate-300 px-3"
+                  />
+                  <input
+                    type="text"
+                    placeholder={`Approver ${index + 1} Title`}
+                    value={approver.title}
+                    onChange={(event) =>
+                      setBrandApprovers((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? { ...item, title: event.target.value }
+                            : item
+                        )
+                      )
+                    }
+                    maxLength={100}
+                    className="h-10 w-full rounded-lg border border-slate-300 px-3"
+                  />
+                </div>
+              ))}
+            </div>
+
             {error && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {error}
               </div>
             )}
-
-            <br />
 
             <div className="flex gap-3">
               <button
@@ -427,6 +514,15 @@ export default function BrandPageClient() {
                     <p className="text-sm text-slate-600">{brand.brd_alamat}</p>
                     <p className="text-xs text-slate-500">
                       {brand.brd_email} • {brand.brd_notelp}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Approvers: {[
+                        brand.brd_approver_name,
+                        brand.brd_approver2_name,
+                        brand.brd_approver3_name,
+                        brand.brd_approver4_name,
+                        brand.brd_approver5_name,
+                      ].filter(Boolean).length}/5 configured
                     </p>
                   </div>
 
