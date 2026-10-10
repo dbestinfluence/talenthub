@@ -40,10 +40,10 @@ const QUICK_SEARCH_POST_LIMIT = 20;
 const QUICK_SEARCH_ENRICH_LIMIT = 12;
 
 /*
- * Gunakan concurrency 1 untuk mengurangi
+ * Gunakan concurrency 2 untuk mengurangi
  * kemungkinan HTTP 429 dari Instagram.
  */
-const ENRICHMENT_CONCURRENCY = 1;
+const ENRICHMENT_CONCURRENCY = 2;
 
 function normalizeUsername(
   value: string

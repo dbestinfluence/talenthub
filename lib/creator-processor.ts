@@ -78,7 +78,7 @@ export interface SeedEntry {
 
 const SHARES_SAVES_ENRICHMENT_LIMIT = 12;
 
-const TOP_CONTENT_LIMIT = 6;
+const TOP_CONTENT_LIMIT = 5;
 
 function contentScore(post: RawPost): number {
 
