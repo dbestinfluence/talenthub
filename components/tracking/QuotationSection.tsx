@@ -354,11 +354,11 @@ export default function QuotationSection({
 
     let currentY = (doc as any).lastAutoTable.finalY;
 
-    // Keep the summary with the content table whenever the complete box still fits.
-    const summaryHeight = 5 + 4 * 6;
-    // Leave a comfortable bottom margin; a nearly full content page should
-    // place the complete summary box on the following page.
-    if (currentY + summaryHeight > pageHeight - 45) {
+    // Treat Summary, Terms, and Approval as one footer block. This prevents an
+    // approval-only page while still allowing a medium-sized table to share
+    // the first page with the complete footer.
+    const cohesiveFooterHeight = 108;
+    if (currentY + cohesiveFooterHeight > pageHeight - 8) {
       doc.addPage();
       drawPageBorder();
       currentY = 20;
@@ -419,15 +419,8 @@ export default function QuotationSection({
     // =====================================================
     // 7. TERMS & CONDITIONS
     // =====================================================
-    // Terms and signatures may move independently so the summary is not pushed
-    // away from a table that still has enough room for it.
-    const footerHeight = 112;
-    let termsY = currentY + 35;
-    if (termsY + footerHeight > pageHeight - 12) {
-      doc.addPage();
-      drawPageBorder();
-      termsY = 20;
-    }
+    // Place the terms beside the summary instead of leaving the left side empty.
+    const termsY = currentY + 5;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
@@ -435,13 +428,19 @@ export default function QuotationSection({
     doc.text("Terms of Payment", contentLeft - 2, termsY);
 
     doc.text(
-      "1. Payment will be made after the campaign is completed.",
+      doc.splitTextToSize(
+        "1. Payment will be made after the campaign is completed.",
+        68
+      ),
       contentLeft - 2,
       termsY + 6
     );
 
     doc.text(
-      "2. Payment is due within 14 days after the invoice is received.",
+      doc.splitTextToSize(
+        "2. Payment is due within 14 days after the invoice is received.",
+        68
+      ),
       contentLeft - 2,
       termsY + 12
     );
@@ -467,19 +466,19 @@ export default function QuotationSection({
     // =====================================================
     // 8. SIGNATURE TABLE
     // =====================================================
-    const signatureY = termsY + 60;
+    const signatureY = termsY + 58;
     const availableSignatureWidth = contentRight - (contentLeft - 2);
     const signatureWidth = Math.max(
       96,
-      Math.min(availableSignatureWidth, (displayedApprovers.length + 1) * 32)
+      Math.min(120, availableSignatureWidth, (displayedApprovers.length + 1) * 30)
     );
     const signatureX = contentRight - signatureWidth;
     const providedWidth = signatureWidth / (displayedApprovers.length + 1);
     const approverWidth = (signatureWidth - providedWidth) / displayedApprovers.length;
 
     const headerHeight = 7;
-    const signHeight = 30;
-    const nameHeight = 15;
+    const signHeight = 20;
+    const nameHeight = 18;
 
     doc.setDrawColor(...black);
     doc.setLineWidth(0.35);
@@ -516,37 +515,53 @@ export default function QuotationSection({
     });
 
     // HEADER TEXT
-    doc.setFont("times", "bold");
-    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
 
-    doc.text("Provided by", signatureX + providedWidth / 2, signatureY + 5, {
+    doc.text("Provided By", signatureX + providedWidth / 2, signatureY + 4.8, {
       align: "center",
     });
 
     doc.text(
       "Approved By",
       signatureX + providedWidth + (signatureWidth - providedWidth) / 2,
-      signatureY + 5,
+      signatureY + 4.8,
       { align: "center" }
     );
 
     // NAMA
-    const nameY = signatureY + headerHeight + signHeight + 6;
+    const nameTop = signatureY + headerHeight + signHeight;
+    const nameY = nameTop + 5;
 
-    doc.setFontSize(displayedApprovers.length >= 4 ? 7 : 9);
+    doc.setFontSize(displayedApprovers.length >= 4 ? 6.5 : 8);
+    doc.setFont("helvetica", "bold");
     doc.text("Donna Bella", signatureX + providedWidth / 2, nameY, {
       align: "center",
       maxWidth: providedWidth - 4,
     });
     displayedApprovers.forEach((approver, index) => {
       const centerX = signatureX + providedWidth + index * approverWidth + approverWidth / 2;
-      doc.text(String(approver.name).trim(), centerX, nameY, {
+      const nameLines = doc
+        .splitTextToSize(String(approver.name).trim(), approverWidth - 3)
+        .slice(0, 2);
+      const titleLines = doc
+        .splitTextToSize(String(approver.title).trim(), approverWidth - 3)
+        .slice(0, 3);
+      const lineHeight = displayedApprovers.length >= 4 ? 2.8 : 3.4;
+      const titleY = Math.min(
+        nameTop + nameHeight - 3,
+        nameY + nameLines.length * lineHeight
+      );
+
+      doc.setFont("helvetica", "bold");
+      doc.text(nameLines, centerX, nameY, {
         align: "center",
-        maxWidth: approverWidth - 3,
+        lineHeightFactor: 1.05,
       });
-      doc.text(String(approver.title).trim(), centerX, nameY + 5, {
+      doc.setFont("helvetica", "normal");
+      doc.text(titleLines, centerX, titleY, {
         align: "center",
-        maxWidth: approverWidth - 3,
+        lineHeightFactor: 1.05,
       });
     });
 
