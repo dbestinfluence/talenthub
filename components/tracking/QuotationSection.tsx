@@ -478,7 +478,26 @@ export default function QuotationSection({
 
     const headerHeight = 7;
     const signHeight = 20;
-    const nameHeight = 18;
+    const signatureFontSize = displayedApprovers.length >= 4 ? 6.5 : 8;
+    const lineHeight = displayedApprovers.length >= 4 ? 2.8 : 3.4;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(signatureFontSize);
+    const approverTextLayouts = displayedApprovers.map((approver) => ({
+      nameLines: doc
+        .splitTextToSize(String(approver.name).trim(), approverWidth - 3)
+        .slice(0, 2) as string[],
+      titleLines: doc
+        .splitTextToSize(String(approver.title).trim(), approverWidth - 3)
+        .slice(0, 3) as string[],
+    }));
+    const maximumTextLines = Math.max(
+      2,
+      ...approverTextLayouts.map(
+        (layout) => layout.nameLines.length + layout.titleLines.length
+      )
+    );
+    const nameHeight = Math.max(10, 3 + maximumTextLines * lineHeight);
 
     doc.setDrawColor(...black);
     doc.setLineWidth(0.35);
@@ -531,27 +550,19 @@ export default function QuotationSection({
 
     // NAMA
     const nameTop = signatureY + headerHeight + signHeight;
-    const nameY = nameTop + 5;
 
-    doc.setFontSize(displayedApprovers.length >= 4 ? 6.5 : 8);
+    doc.setFontSize(signatureFontSize);
     doc.setFont("helvetica", "bold");
-    doc.text("Donna Bella", signatureX + providedWidth / 2, nameY, {
+    doc.text("Donna Bella", signatureX + providedWidth / 2, nameTop + nameHeight / 2 + 1, {
       align: "center",
       maxWidth: providedWidth - 4,
     });
-    displayedApprovers.forEach((approver, index) => {
+    displayedApprovers.forEach((_approver, index) => {
       const centerX = signatureX + providedWidth + index * approverWidth + approverWidth / 2;
-      const nameLines = doc
-        .splitTextToSize(String(approver.name).trim(), approverWidth - 3)
-        .slice(0, 2);
-      const titleLines = doc
-        .splitTextToSize(String(approver.title).trim(), approverWidth - 3)
-        .slice(0, 3);
-      const lineHeight = displayedApprovers.length >= 4 ? 2.8 : 3.4;
-      const titleY = Math.min(
-        nameTop + nameHeight - 3,
-        nameY + nameLines.length * lineHeight
-      );
+      const { nameLines, titleLines } = approverTextLayouts[index];
+      const textBlockHeight = (nameLines.length + titleLines.length) * lineHeight;
+      const nameY = nameTop + (nameHeight - textBlockHeight) / 2 + lineHeight * 0.8;
+      const titleY = nameY + nameLines.length * lineHeight;
 
       doc.setFont("helvetica", "bold");
       doc.text(nameLines, centerX, nameY, {
