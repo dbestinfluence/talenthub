@@ -340,13 +340,28 @@ export default function QuotationSection({
       },
     });
 
+    const brandApprovers = (Array.isArray(projectDetail?.brandApprovers)
+      ? projectDetail.brandApprovers
+      : []
+    ).filter(
+      (approver: { name?: string; title?: string }) =>
+        String(approver?.name ?? "").trim() &&
+        String(approver?.title ?? "").trim()
+    ) as Array<{ name: string; title: string }>;
+    const displayedApprovers = brandApprovers.length > 0
+      ? brandApprovers.slice(0, 5)
+      : [{ name: "-", title: "-" }];
+
     let currentY = (doc as any).lastAutoTable.finalY;
 
-    // Cek jika sisa halaman tidak cukup untuk footer, maka buat halaman baru
-    if (currentY > pageHeight - 160) { // Reserve space for terms and the adaptive signature table.
+    // Keep the summary with the content table whenever the complete box still fits.
+    const summaryHeight = 5 + 4 * 6;
+    // Leave a comfortable bottom margin; a nearly full content page should
+    // place the complete summary box on the following page.
+    if (currentY + summaryHeight > pageHeight - 45) {
       doc.addPage();
-      drawPageBorder(); // Gambar HANYA bingkai di halaman baru yang dibuat manual
-      currentY = 20; // Reset posisi Y di halaman baru
+      drawPageBorder();
+      currentY = 20;
     }
 
     // =====================================================
@@ -404,7 +419,15 @@ export default function QuotationSection({
     // =====================================================
     // 7. TERMS & CONDITIONS
     // =====================================================
-    const termsY = currentY + 35;
+    // Terms and signatures may move independently so the summary is not pushed
+    // away from a table that still has enough room for it.
+    const footerHeight = 112;
+    let termsY = currentY + 35;
+    if (termsY + footerHeight > pageHeight - 12) {
+      doc.addPage();
+      drawPageBorder();
+      termsY = 20;
+    }
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
@@ -444,22 +467,14 @@ export default function QuotationSection({
     // =====================================================
     // 8. SIGNATURE TABLE
     // =====================================================
-    const brandApprovers = (Array.isArray(projectDetail?.brandApprovers)
-      ? projectDetail.brandApprovers
-      : []
-    ).filter(
-      (approver: { name?: string; title?: string }) =>
-        String(approver?.name ?? "").trim() &&
-        String(approver?.title ?? "").trim()
-    ) as Array<{ name: string; title: string }>;
-    const displayedApprovers = brandApprovers.length > 0
-      ? brandApprovers.slice(0, 5)
-      : [{ name: "-", title: "-" }];
-
-    const signatureX = contentLeft - 2;
     const signatureY = termsY + 60;
-    const signatureWidth = contentRight - signatureX;
-    const providedWidth = 30;
+    const availableSignatureWidth = contentRight - (contentLeft - 2);
+    const signatureWidth = Math.max(
+      96,
+      Math.min(availableSignatureWidth, (displayedApprovers.length + 1) * 32)
+    );
+    const signatureX = contentRight - signatureWidth;
+    const providedWidth = signatureWidth / (displayedApprovers.length + 1);
     const approverWidth = (signatureWidth - providedWidth) / displayedApprovers.length;
 
     const headerHeight = 7;
