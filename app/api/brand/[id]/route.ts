@@ -17,10 +17,10 @@ export async function PUT(req: Request, context: RouteContext) {
       name: String(body[slot === 1 ? "brd_approver_name" : `brd_approver${slot}_name`] ?? "").trim(),
       title: String(body[slot === 1 ? "brd_approver_title" : `brd_approver${slot}_title`] ?? "").trim(),
     }));
-    if (approvers.some((approver) => Boolean(approver.name) !== Boolean(approver.title))) {
-      return NextResponse.json({ error: "Each approver must have both a name and title" }, { status: 400 });
+    if (approvers.some((approver) => !approver.name && Boolean(approver.title))) {
+      return NextResponse.json({ error: "An approver title requires an approver name" }, { status: 400 });
     }
-    if (!approvers.some((approver) => approver.name && approver.title)) {
+    if (!approvers.some((approver) => approver.name)) {
       return NextResponse.json({ error: "At least one approver is required" }, { status: 400 });
     }
 

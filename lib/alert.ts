@@ -538,6 +538,7 @@ export const showRunningContentModal = async (
     planning_upload: string;
     actual_upload: string;
     link_content: string;
+    content_link_required?: boolean;
   },
   mode: "edit" | "view"
 ) => {
@@ -656,7 +657,12 @@ export const showRunningContentModal = async (
         </div>
 
         <div style="margin-top:16px;text-align:left">
-          <label>Link Content <span style="color:#ef4444">*</span></label>
+          <label>
+            Link Content
+            ${data.content_link_required === false
+          ? '<span style="margin-left:4px;color:#64748b;font-family:inherit;font-size:13px;font-weight:400">(At least 1 per bundle)</span>'
+              : '<span style="color:#ef4444"> *</span>'}
+          </label>
 
           <input
             id="link_content"

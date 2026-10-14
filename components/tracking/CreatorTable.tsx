@@ -256,8 +256,14 @@ export default function CreatorTable({
           : []),
       ];
 
+  const isReportNotRequired = (creator: any) =>
+    creator.pricingType === "BUNDLE" &&
+    !String(creator.drf_link_content ?? "").trim() &&
+    creator.hasReport !== true;
+
   function renderReportRow(creator: any, index: number) {
     const isOpeningReport = openingReportIds.includes(creator.drf_id);
+    const reportNotRequired = isReportNotRequired(creator);
 
     return (
       <tr
@@ -268,15 +274,17 @@ export default function CreatorTable({
           <input
             type="checkbox"
             aria-label={`Select ${creator.name || "creator"}`}
-            checked={selectedReportIds.includes(creator.drf_id)}
+            checked={!reportNotRequired && selectedReportIds.includes(creator.drf_id)}
+            disabled={reportNotRequired}
             onChange={(event) => {
+              if (reportNotRequired) return;
               onReportSelectionChange?.(
                 event.target.checked
                   ? [...new Set([...selectedReportIds, creator.drf_id])]
                   : selectedReportIds.filter((id) => id !== creator.drf_id)
               );
             }}
-            className="h-4 w-4 accent-sky-500"
+            className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
           />
         </td>
         <td className="p-3 border-r border-gray-200 text-center whitespace-nowrap">
@@ -301,6 +309,8 @@ export default function CreatorTable({
             >
               View content
             </a>
+          ) : reportNotRequired ? (
+            <span className="text-xs text-slate-500">Not required</span>
           ) : (
             "-"
           )}
@@ -313,11 +323,15 @@ export default function CreatorTable({
             <button
               type="button"
               onClick={() => onOpenReport?.([creator.drf_id])}
-              disabled={!onOpenReport || isOpeningReport}
+              disabled={!onOpenReport || isOpeningReport || reportNotRequired}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
             >
-              <InvoiceIcon className="h-4 w-4 text-slate-900" />
-              <span>{isOpeningReport ? "Loading..." : "View"}</span>
+              {!reportNotRequired && <InvoiceIcon className="h-4 w-4 text-slate-900" />}
+              <span>
+                {reportNotRequired
+                  ? "Not required"
+                  : isOpeningReport ? "Loading..." : "View"}
+              </span>
             </button>
           ) : (
             "-"
@@ -736,15 +750,19 @@ export default function CreatorTable({
                     type="checkbox"
                     aria-label="Select all creators on this page"
                     checked={
-                      visibleCreators.length > 0 &&
-                      visibleCreators.every((creator) =>
+                      visibleCreators.some((creator) =>
+                        !isReportNotRequired(creator)
+                      ) &&
+                      visibleCreators
+                        .filter((creator) => !isReportNotRequired(creator))
+                        .every((creator) =>
                         selectedReportIds.includes(creator.drf_id)
                       )
                     }
                     onChange={(event) => {
-                      const pageIds = visibleCreators.map(
-                        (creator) => creator.drf_id
-                      );
+                      const pageIds = visibleCreators
+                        .filter((creator) => !isReportNotRequired(creator))
+                        .map((creator) => creator.drf_id);
                       onReportSelectionChange?.(
                         event.target.checked
                           ? [...new Set([...selectedReportIds, ...pageIds])]
@@ -770,7 +788,7 @@ export default function CreatorTable({
                       {(
                         draftPricingMode && ["sow", "qty", "pricingType", "rateCard", "markupPrice"].includes(head.field)
                       ) || (
-                        runningMode && ["drf_planning_upload", "drf_actual_upload", "drf_link_content"].includes(head.field)
+                        runningMode && ["drf_planning_upload", "drf_actual_upload"].includes(head.field)
                       ) ? <span className="ml-1 text-red-500">*</span> : null}
                     </span>
                     <span className="text-gray-400 text-xs ml-1">

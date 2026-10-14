@@ -2,6 +2,7 @@ import { authOptions } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { getMissingRunningFields } from "@/lib/running-validation";
 import { isGoogleSheetsConfigured, syncProjectSpreadsheet } from "@/lib/google-sheets";
 import { normalizeProjectNumber } from "@/lib/project-numbers";
 
@@ -165,7 +166,7 @@ if (id) {
       { name: project.mst_brand?.brd_approver3_name ?? "", title: project.mst_brand?.brd_approver3_title ?? "" },
       { name: project.mst_brand?.brd_approver4_name ?? "", title: project.mst_brand?.brd_approver4_title ?? "" },
       { name: project.mst_brand?.brd_approver5_name ?? "", title: project.mst_brand?.brd_approver5_title ?? "" },
-    ].filter((approver) => approver.name.trim() && approver.title.trim()),
+    ].filter((approver) => approver.name.trim()),
     brandPic:
       project.mst_brand?.brd_pic1?.trim() ||
       project.mst_brand?.brd_pic2?.trim() ||
@@ -444,34 +445,29 @@ export async function PUT(request: Request) {
         where: { drf_projectid: id },
         select: {
           drf_id: true,
+          drf_creatorid: true,
           drf_planning_upload: true,
           drf_actual_upload: true,
           drf_link_content: true,
+          drf_pricing_type: true,
+          drf_bundle_id: true,
         },
       });
 
-      const missingRunningFields = runningDetails.reduce<Record<number, {
-        planningUpload: boolean;
-        actualUpload: boolean;
-        linkContent: boolean;
-      }>>((result, detail) => {
-        const fields = {
-          planningUpload: !detail.drf_planning_upload,
-          actualUpload: !detail.drf_actual_upload,
-          linkContent: !detail.drf_link_content?.trim(),
-        };
-
-        if (fields.planningUpload || fields.actualUpload || fields.linkContent) {
-          result[detail.drf_id] = fields;
-        }
-
-        return result;
-      }, {});
+      const missingRunningFields = getMissingRunningFields(runningDetails.map((detail) => ({
+        id: detail.drf_id,
+        creatorId: detail.drf_creatorid,
+        pricingType: detail.drf_pricing_type,
+        bundleId: detail.drf_bundle_id,
+        planningUpload: detail.drf_planning_upload,
+        actualUpload: detail.drf_actual_upload,
+        linkContent: detail.drf_link_content,
+      })));
 
       if (Object.keys(missingRunningFields).length > 0) {
         return NextResponse.json(
           {
-            error: "Complete all Running data before generating the report",
+            error: "Complete all Running dates, every Regular link, and at least one Link Content for each creator bundle before generating the report",
             missingRunningFields,
           },
           { status: 400 }
@@ -559,7 +555,7 @@ export async function PUT(request: Request) {
       updateData.prj_invoiceno = String(body.prj_invoiceno).trim();
 
     if (body.prj_po_no !== undefined)
-      updateData.prj_po_no = String(body.prj_po_no).trim();
+      updateData.prj_po_no = String(body.prj_po_no).trim() || null;
 
     if (body.prj_tax_rate !== undefined) {
       const taxRate = Number(body.prj_tax_rate);

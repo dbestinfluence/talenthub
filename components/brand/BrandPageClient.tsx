@@ -130,22 +130,22 @@ export default function BrandPageClient() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    const hasIncompleteApprover = brandApprovers.some(
-      (approver) => Boolean(approver.name.trim()) !== Boolean(approver.title.trim())
+    const hasTitleWithoutName = brandApprovers.some(
+      (approver) => !approver.name.trim() && Boolean(approver.title.trim())
     );
-    const completedApprovers = brandApprovers.filter(
-      (approver) => approver.name.trim() && approver.title.trim()
+    const configuredApprovers = brandApprovers.filter(
+      (approver) => approver.name.trim()
     );
 
     if (!brdNama.trim()) {
       showToast("error", "Brand name is required");
       return;
     }
-    if (hasIncompleteApprover) {
-      showToast("error", "Complete both the name and title for each approver used");
+    if (hasTitleWithoutName) {
+      showToast("error", "Enter an approver name before adding a title");
       return;
     }
-    if (completedApprovers.length === 0) {
+    if (configuredApprovers.length === 0) {
       showToast("error", "Add at least one quotation approver");
       return;
     }
@@ -410,14 +410,11 @@ export default function BrandPageClient() {
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-slate-700">Quotation Approval</p>
-              <p className="text-xs text-slate-500">
-                Fill only the approvers required for this brand (maximum 5).
-              </p>
               {brandApprovers.map((approver, index) => (
                 <div key={index} className="grid gap-2 sm:grid-cols-2">
                   <input
                     type="text"
-                    placeholder={`Approver ${index + 1} Name`}
+                    placeholder={`Name ${index + 1}`}
                     value={approver.name}
                     onChange={(event) =>
                       setBrandApprovers((current) =>
@@ -429,11 +426,11 @@ export default function BrandPageClient() {
                       )
                     }
                     maxLength={100}
-                    className="h-10 w-full rounded-lg border border-slate-300 px-3"
+                    className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
                   />
                   <input
                     type="text"
-                    placeholder={`Approver ${index + 1} Title`}
+                    placeholder={`Title ${index + 1} (Optional)`}
                     value={approver.title}
                     onChange={(event) =>
                       setBrandApprovers((current) =>
@@ -445,7 +442,7 @@ export default function BrandPageClient() {
                       )
                     }
                     maxLength={100}
-                    className="h-10 w-full rounded-lg border border-slate-300 px-3"
+                    className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
                   />
                 </div>
               ))}

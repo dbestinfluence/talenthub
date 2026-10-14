@@ -345,8 +345,7 @@ export default function QuotationSection({
       : []
     ).filter(
       (approver: { name?: string; title?: string }) =>
-        String(approver?.name ?? "").trim() &&
-        String(approver?.title ?? "").trim()
+        String(approver?.name ?? "").trim()
     ) as Array<{ name: string; title: string }>;
     const displayedApprovers = brandApprovers.length > 0
       ? brandApprovers.slice(0, 5)
@@ -487,9 +486,11 @@ export default function QuotationSection({
       nameLines: doc
         .splitTextToSize(String(approver.name).trim(), approverWidth - 3)
         .slice(0, 2) as string[],
-      titleLines: doc
-        .splitTextToSize(String(approver.title).trim(), approverWidth - 3)
-        .slice(0, 3) as string[],
+      titleLines: String(approver.title ?? "").trim()
+        ? doc
+            .splitTextToSize(String(approver.title).trim(), approverWidth - 3)
+            .slice(0, 3) as string[]
+        : [],
     }));
     const maximumTextLines = Math.max(
       2,
@@ -570,10 +571,12 @@ export default function QuotationSection({
         lineHeightFactor: 1.05,
       });
       doc.setFont("helvetica", "normal");
-      doc.text(titleLines, centerX, titleY, {
-        align: "center",
-        lineHeightFactor: 1.05,
-      });
+      if (titleLines.length > 0) {
+        doc.text(titleLines, centerX, titleY, {
+          align: "center",
+          lineHeightFactor: 1.05,
+        });
+      }
     });
 
     // =====================================================
@@ -588,7 +591,7 @@ export default function QuotationSection({
       return;
     }
     if (!Array.isArray(projectDetail?.brandApprovers) || projectDetail.brandApprovers.length === 0) {
-      await showAlertValidationError("Configure at least one approver name and title in Master Data Brand before exporting.");
+      await showAlertValidationError("Configure at least one approver name in Master Data Brand before exporting.");
       return;
     }
     (await createQuotationPdf()).save(getQuotationFileName());

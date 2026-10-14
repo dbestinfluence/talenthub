@@ -4,6 +4,7 @@ import CreatorTable from "./CreatorTable";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { loadCompanyLogo } from "@/lib/pdf-branding";
+import { runningBundleKey } from "@/lib/running-validation";
 
 type RunningCreator = {
   drf_id: number;
@@ -15,6 +16,8 @@ type RunningCreator = {
   drf_planning_upload?: string | Date | null;
   drf_actual_upload?: string | Date | null;
   drf_link_content?: string | null;
+  pricingType?: string | null;
+  bundleId?: string | null;
   [key: string]: unknown;
 };
 
@@ -102,11 +105,25 @@ export default function RunningSection({
     doc.text(`Status : Running`, 157, 65);
     doc.text(`Running Period : ${formatDate(projectDetail?.runningStartDate)} - ${formatDate(projectDetail?.runningEndDate)}`, 157, 71);
 
+    const bundleHasLink = new Map<string, boolean>();
+    creators.forEach((creator) => {
+      if (creator.pricingType !== "BUNDLE") return;
+      const key = runningBundleKey({ creatorId: creator.drf_creatorid, bundleId: creator.bundleId });
+      bundleHasLink.set(
+        key,
+        Boolean(bundleHasLink.get(key) || String(creator.drf_link_content ?? "").trim()),
+      );
+    });
+    const hasRequiredLink = (creator: RunningCreator) => creator.pricingType === "BUNDLE"
+      ? Boolean(bundleHasLink.get(runningBundleKey({ creatorId: creator.drf_creatorid, bundleId: creator.bundleId })))
+      : Boolean(String(creator.drf_link_content ?? "").trim());
+
     autoTable(doc, {
       startY: 79,
       head: [["No.", "Influencer", "Username", "SOW", "Platform", "Planning Upload", "Actual Upload", "Content", "Progress"]],
       body: creators.map((creator, index) => {
-        const completed = creator.drf_actual_upload && creator.drf_link_content;
+        const linkComplete = hasRequiredLink(creator);
+        const completed = creator.drf_actual_upload && linkComplete;
         return [
           index + 1,
           creator.name ?? "-",
@@ -115,7 +132,9 @@ export default function RunningSection({
           creator.platform ?? "-",
           formatDate(creator.drf_planning_upload),
           formatDate(creator.drf_actual_upload),
-          creator.drf_link_content ? "Available" : "-",
+          creator.drf_link_content
+            ? "Available"
+            : creator.pricingType === "BUNDLE" && linkComplete ? "Included in bundle" : "-",
           completed ? "Completed" : "In Progress",
         ];
       }),
@@ -152,7 +171,11 @@ export default function RunningSection({
       didDrawPage: drawBorder,
     });
 
-    const completedCount = creators.filter((creator) => creator.drf_actual_upload && creator.drf_link_content).length;
+    const completedCount = creators.filter(
+      (creator) =>
+        creator.drf_actual_upload &&
+        hasRequiredLink(creator)
+    ).length;
     const tableDocument = doc as jsPDF & { lastAutoTable: { finalY: number } };
     const summaryY = Math.min(tableDocument.lastAutoTable.finalY + 10, pageHeight - 23);
     doc.setFont("helvetica", "bold");

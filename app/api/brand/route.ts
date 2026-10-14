@@ -33,10 +33,10 @@ export async function POST(req: Request) {
     }));
 
     if (!brd_nama) return NextResponse.json({ error: "Brand name is required" }, { status: 400 });
-    if (approvers.some((approver) => Boolean(approver.name) !== Boolean(approver.title))) {
-      return NextResponse.json({ error: "Each approver must have both a name and title" }, { status: 400 });
+    if (approvers.some((approver) => !approver.name && Boolean(approver.title))) {
+      return NextResponse.json({ error: "An approver title requires an approver name" }, { status: 400 });
     }
-    if (!approvers.some((approver) => approver.name && approver.title)) {
+    if (!approvers.some((approver) => approver.name)) {
       return NextResponse.json({ error: "At least one approver is required" }, { status: 400 });
     }
 

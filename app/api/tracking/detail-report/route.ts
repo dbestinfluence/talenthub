@@ -103,6 +103,9 @@ function serialize(row: Awaited<ReturnType<typeof getRows>>[number]) {
     followers: row.mst_creators.followers ?? 0,
     photo: row.mst_creators.photo_url,
     sow: row.mst_sow?.sow_nama ?? null,
+    qty: row.drf_qty ?? 1,
+    pricingType: row.drf_pricing_type,
+    bundleId: row.drf_bundle_id,
     contentUrl: row.drf_link_content,
     report: row.detail_report,
   };

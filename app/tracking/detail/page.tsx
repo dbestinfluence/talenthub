@@ -22,6 +22,7 @@ import QuotationSection from "@/components/tracking/QuotationSection";
 import RunningSection from "@/components/tracking/RunningSection";
 import ReportSection from "@/components/tracking/ReportSection";
 import InvoiceSection from "@/components/tracking/InvoiceSection";
+import { getMissingRunningFields } from "@/lib/running-validation";
 
 
 export default function DraftPage() {
@@ -409,28 +410,20 @@ const handleStartProject = async (taxRate: number) => {
 };
 
 const handleGenerateReport = async () => {
-  const missingFields = creators.reduce<Record<number, {
-    planningUpload: boolean;
-    actualUpload: boolean;
-    linkContent: boolean;
-  }>>((result, creator) => {
-    const fields = {
-      planningUpload: !creator.drf_planning_upload,
-      actualUpload: !creator.drf_actual_upload,
-      linkContent: !creator.drf_link_content?.trim(),
-    };
-
-    if (fields.planningUpload || fields.actualUpload || fields.linkContent) {
-      result[creator.drf_id] = fields;
-    }
-
-    return result;
-  }, {});
+  const missingFields = getMissingRunningFields(creators.map((creator) => ({
+    id: creator.drf_id,
+    creatorId: creator.drf_creatorid,
+    pricingType: creator.pricingType,
+    bundleId: creator.bundleId,
+    planningUpload: creator.drf_planning_upload,
+    actualUpload: creator.drf_actual_upload,
+    linkContent: creator.drf_link_content,
+  })));
 
   if (Object.keys(missingFields).length > 0) {
     setInvalidRunningFields(missingFields);
     await showAlertValidationError(
-      "Complete Planning Upload, Actual Upload, and Link Content for every creator before generating the report."
+      "Complete Planning Upload and Actual Upload for every SOW. Regular rows require a Link Content, and each creator bundle requires at least one Link Content."
     );
     return;
   }
@@ -553,6 +546,7 @@ const handleUpdateRunningContent = async (creator: any, mode: "edit" | "view") =
     planning_upload: formatDateForInput(creator.drf_planning_upload),
     actual_upload: formatDateForInput(creator.drf_actual_upload),
     link_content: creator.drf_link_content ?? "",
+    content_link_required: creator.pricingType !== "BUNDLE",
   }, mode);
 
   // Jika user menutup modal atau dalam mode view, jangan lakukan apa-apa
@@ -584,30 +578,26 @@ const handleUpdateRunningContent = async (creator: any, mode: "edit" | "view") =
 
     const updatedCreator = await response.json();
 
-    // Update state creators dengan data baru
-    setCreators((prevData) =>
-      prevData.map((c) => (c.drf_id === updatedCreator.drf_id ? { ...c, ...updatedCreator } : c))
+    const updatedCreators = creators.map((currentCreator) =>
+      currentCreator.drf_id === updatedCreator.drf_id
+        ? { ...currentCreator, ...updatedCreator }
+        : currentCreator
     );
-    setInvalidRunningFields((current) => {
-      const fields = {
-        planningUpload: !result.planning_upload,
-        actualUpload: !result.actual_upload,
-        linkContent: !result.link_content?.trim(),
-      };
-
-      if (!fields.planningUpload && !fields.actualUpload && !fields.linkContent) {
-        const remaining = { ...current };
-        delete remaining[creator.drf_id];
-        return remaining;
-      }
-
-      return { ...current, [creator.drf_id]: fields };
-    });
+    setCreators(updatedCreators);
+    setInvalidRunningFields(getMissingRunningFields(updatedCreators.map((currentCreator) => ({
+      id: currentCreator.drf_id,
+      creatorId: currentCreator.drf_creatorid,
+      pricingType: currentCreator.pricingType,
+      bundleId: currentCreator.bundleId,
+      planningUpload: currentCreator.drf_planning_upload,
+      actualUpload: currentCreator.drf_actual_upload,
+      linkContent: currentCreator.drf_link_content,
+    }))));
 
     // Tambahkan id creator ke `checkedCreators` agar ikonnya berubah jadi mata
-    if (result.link_content) {
-      setCheckedCreators((prev) => [...new Set([...prev, creator.drf_id])]);
-    }
+    setCheckedCreators(updatedCreators
+      .filter((currentCreator) => Boolean(currentCreator.drf_link_content))
+      .map((currentCreator) => currentCreator.drf_id));
 
     await showSuccess("Success", "Content data has been updated successfully.");
   } catch (error) {

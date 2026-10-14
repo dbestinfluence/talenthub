@@ -80,10 +80,9 @@ export default function InvoiceSection({
     if (savingDocumentField) return;
     const value = (field === "invoice" ? invoiceNoInput : poNoInput).trim();
     const savedValue = field === "invoice" ? savedInvoiceNo : savedPoNo;
-    if (!value) {
-      await showAlertValidationError(`${field === "invoice" ? "Invoice No" : "PurchaseOrder No"} is required.`);
-      if (field === "invoice") setInvoiceNoInput(savedInvoiceNo);
-      else setPoNoInput(savedPoNo);
+    if (field === "invoice" && !value) {
+      await showAlertValidationError("Invoice No is required.");
+      setInvoiceNoInput(savedInvoiceNo);
       return;
     }
     if (value === savedValue) return;
@@ -104,7 +103,12 @@ export default function InvoiceSection({
         setPoNoInput(value);
         setSavedPoNo(value);
       }
-      await showSuccess("Document number updated", `${field === "invoice" ? "Invoice No" : "PurchaseOrder No"} has been saved.`);
+      await showSuccess(
+        "Document number updated",
+        field === "invoice"
+          ? "Invoice No has been saved."
+          : value ? "PurchaseOrder No has been saved." : "PurchaseOrder No has been cleared."
+      );
     } catch (error) {
       if (field === "invoice") setInvoiceNoInput(savedInvoiceNo);
       else setPoNoInput(savedPoNo);
@@ -211,16 +215,16 @@ export default function InvoiceSection({
 
     const numberBoxX = 107;
     const numberBoxWidth = 42;
-    const numberBox = (label: string, value: string, y: number) => {
+    const numberBox = (label: string, value: string, y: number, fallback = "-") => {
       doc.setFillColor(250, 224, 210);
       doc.rect(numberBoxX, y, numberBoxWidth, 5, "F");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
       doc.text(label, numberBoxX + numberBoxWidth / 2, y + 3.5, { align: "center" });
       doc.setFont("helvetica", "normal");
-      doc.text(value || "-", numberBoxX + numberBoxWidth / 2, y + 8, { align: "center" });
+      doc.text(value || fallback, numberBoxX + numberBoxWidth / 2, y + 8, { align: "center" });
     };
-    numberBox("PURCHASEORDER NO", poNoInput.trim() || "-", 17);
+    numberBox("PURCHASEORDER NO", poNoInput.trim(), 17);
     numberBox("INVOICE NO", invoiceNoInput.trim() || "-", 31);
     numberBox("QUOTATION NO", String(projectDetail?.quotationNo ?? "-"), 45);
 
@@ -377,8 +381,8 @@ export default function InvoiceSection({
   };
 
   const handleExportPdf = async () => {
-    if (!invoiceNoInput.trim() || !poNoInput.trim()) {
-      await showAlertValidationError("Complete Invoice No and PurchaseOrder No before exporting the invoice.");
+    if (!invoiceNoInput.trim()) {
+      await showAlertValidationError("Complete Invoice No before exporting the invoice.");
       return;
     }
     (await createInvoicePdf()).save(getFileName());
@@ -441,8 +445,8 @@ export default function InvoiceSection({
       </div>
 
       <div className="mt-6 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
-        <DocumentField label="PurchaseOrder No" value={poNoInput} readOnly={savingDocumentField !== null} onChange={setPoNoInput} onSave={() => void saveDocumentField("po")} />
-        <DocumentField label="Invoice No" value={invoiceNoInput} readOnly={savingDocumentField !== null} onChange={setInvoiceNoInput} onSave={() => void saveDocumentField("invoice")} />
+        <DocumentField label="PurchaseOrder No" optional value={poNoInput} readOnly={savingDocumentField !== null} onChange={setPoNoInput} onSave={() => void saveDocumentField("po")} />
+        <DocumentField label="Invoice No" required value={invoiceNoInput} readOnly={savingDocumentField !== null} onChange={setInvoiceNoInput} onSave={() => void saveDocumentField("invoice")} />
         <DocumentField label="Quotation No" value={String(projectDetail?.quotationNo ?? "")} readOnly onChange={() => undefined} onSave={() => undefined} />
       </div>
 
@@ -509,22 +513,30 @@ function DocumentField({
   label,
   value,
   readOnly,
+  required = false,
+  optional = false,
   onChange,
   onSave,
 }: {
   label: string;
   value: string;
   readOnly: boolean;
+  required?: boolean;
+  optional?: boolean;
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
   return (
     <label className="text-sm font-semibold text-slate-700">
       {label}
+      {required && <span className="ml-1 text-red-500" aria-hidden="true">*</span>}
+      {optional && <span className="ml-1 text-xs font-normal text-slate-500">(Optional)</span>}
       <input
         value={value}
         maxLength={100}
         readOnly={readOnly}
+        required={required}
+        aria-required={required}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onSave}
         onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}

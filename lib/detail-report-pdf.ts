@@ -19,11 +19,15 @@ type StoredReport = {
 
 type ReportItem = {
   detailId: number;
+  creatorId: number;
   creatorName: string;
   username: string;
   platform: string;
   followers: number;
   sow: string | null;
+  qty: number;
+  pricingType: string | null;
+  bundleId: string | null;
   contentUrl: string | null;
   report: StoredReport | null;
 };
@@ -131,6 +135,44 @@ function metricRows(item: ReportItem) {
     ['Likes', report.likes], ['Comments', report.comments], ['Saves', report.saves],
     ['Shares', report.shares], ['Repost', report.reposts], ['AVG Duration View', report.duration],
   ].filter((row): row is [string, number] => Number(row[1]) > 0);
+}
+
+function campaignDeliverables(items: ReportItem[]) {
+  const groups = new Map<string, {
+    creator: string;
+    username: string;
+    type: string;
+    sow: string[];
+    platforms: Set<string>;
+    links: number;
+    analytics: number;
+  }>();
+
+  items.forEach((item) => {
+    const isBundle = item.pricingType === 'BUNDLE';
+    const key = isBundle
+      ? `bundle:${item.creatorId}:${item.bundleId ?? 'bundle'}`
+      : `detail:${item.detailId}`;
+    const group = groups.get(key) ?? {
+      creator: item.creatorName || '-',
+      username: username(item.username),
+      type: isBundle ? 'Bundling' : 'Regular',
+      sow: [],
+      platforms: new Set<string>(),
+      links: 0,
+      analytics: 0,
+    };
+    const qty = Number.isFinite(Number(item.qty)) && Number(item.qty) > 0
+      ? Number(item.qty)
+      : 1;
+    group.sow.push(`- ${qty}x ${item.sow ?? '-'}`);
+    group.platforms.add(item.platform || '-');
+    if (item.contentUrl?.trim()) group.links += 1;
+    if (item.report) group.analytics += 1;
+    groups.set(key, group);
+  });
+
+  return [...groups.values()];
 }
 
 function captionImage(value: string) {
@@ -466,6 +508,14 @@ export async function createDetailReportPdf(payload: DetailReportPayload) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const width = doc.internal.pageSize.getWidth();
   const reportItems = payload.items.filter((item) => item.report);
+  const deliverables = campaignDeliverables(payload.items);
+  const totalDeliverables = payload.items.reduce((sum, item) => {
+    const qty = Number(item.qty);
+    return sum + (Number.isFinite(qty) && qty > 0 ? qty : 1);
+  }, 0);
+  const linkedContent = new Set(
+    payload.items.map((item) => item.contentUrl?.trim()).filter(Boolean),
+  ).size;
   const companyName = String(payload.project.dbest?.name ?? '').trim() || '-';
   let page = 1;
 
@@ -498,7 +548,9 @@ export async function createDetailReportPdf(payload: DetailReportPayload) {
   autoTable(doc, {
     startY: 84,
     body: [
-      ['Total Content', `${reportItems.length} posts`],
+      ['Total Deliverables', `${totalDeliverables} SOW`],
+      ['Content Links', `${linkedContent} links`],
+      ['Analyzed Content', `${reportItems.length} posts`],
       ['Total Views', number(totalViews)],
       ['Total Engagement', number(totalEngagement)],
       ['Average Performance', `${averagePerformance.toFixed(2)}%`],
@@ -507,6 +559,42 @@ export async function createDetailReportPdf(payload: DetailReportPayload) {
     styles: { fontSize: 14, textColor: NAVY, cellPadding: 3, lineColor: [105, 121, 113], lineWidth: { bottom: 0.3 } },
     columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
   });
+
+  page++;
+  addPage(doc, page, companyName);
+  title(doc, 'Campaign Deliverables');
+  const deliverablesStartPage = page;
+  autoTable(doc, {
+    startY: 40,
+    head: [['Creator', 'Price Type', 'Statement of Work', 'Platform', 'Content Links', 'Analytics']],
+    body: deliverables.map((item) => [
+      `${item.creator}\n${item.username}`,
+      item.type,
+      item.sow.join('\n'),
+      [...item.platforms].join(' / '),
+      String(item.links),
+      String(item.analytics),
+    ]),
+    theme: 'grid',
+    margin: { top: 40, right: 12, bottom: 16, left: 12 },
+    headStyles: { fillColor: GREEN, textColor: 255, fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize: 8 },
+    bodyStyles: { textColor: NAVY, valign: 'middle', fontSize: 8, lineColor: [102, 147, 128], cellPadding: 2.5 },
+    columnStyles: {
+      0: { cellWidth: 46 },
+      1: { cellWidth: 28, halign: 'center' },
+      2: { cellWidth: 91 },
+      3: { cellWidth: 46, halign: 'center' },
+      4: { cellWidth: 30, halign: 'center' },
+      5: { cellWidth: 30, halign: 'center' },
+    },
+    willDrawPage: (data) => {
+      if (data.pageNumber === 1) return;
+      decorations(doc);
+      footer(doc, deliverablesStartPage + data.pageNumber - 1, companyName);
+      title(doc, 'Campaign Deliverables');
+    },
+  });
+  page = doc.getNumberOfPages();
 
   page++;
   addPage(doc, page, companyName);
