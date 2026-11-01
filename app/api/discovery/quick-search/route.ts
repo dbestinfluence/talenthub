@@ -128,7 +128,7 @@ function selectLatestPosts(
  * Score awal digunakan sebelum enrichPosts.
  *
  * shares, saves, dan reposts belum tentu tersedia
- * pada hasil bulk, jadi pemilihan awal menggunakan:
+ * pada hasil bulk, jadi pemilihan awal :
  *
  * likes + comments + 1% views.
  */
